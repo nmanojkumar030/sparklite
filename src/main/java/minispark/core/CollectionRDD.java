@@ -6,10 +6,10 @@ import java.util.function.Predicate;
 import minispark.core.transformations.MapRDD;
 import minispark.core.transformations.FilterRDD;
 
-public class ParallelCollectionRDD<T> implements MiniRDD<T> {
+public class CollectionRDD<T> implements MiniRDD<T> {
     private final List<T> data;
 
-    public ParallelCollectionRDD(List<T> data) {
+    public CollectionRDD(List<T> data) {
         this.data = data;
     }
 
