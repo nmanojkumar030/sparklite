@@ -1,5 +1,6 @@
 package minispark.core;
 
+import java.util.Iterator;
 import java.util.List;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -17,32 +18,19 @@ public interface MiniRDD<T> {
      */
     int DEFAULT_NUM_PARTITIONS = 2;
 
-    /**
-     * Maps each element of this RDD using the given function.
-     *
-     * @param f The function to apply to each element
-     * @param <R> The type of elements in the resulting RDD
-     * @return A new RDD containing the mapped elements
-     */
+    // Core RDD properties from Spark
+    Partition[] getPartitions();
+    Iterator<T> compute(Partition split);
+    List<MiniRDD<?>> getDependencies();
+    
+    // Optional properties
+    List<String> getPreferredLocations(Partition split);
+    
+    // Transformations (lazy)
     <R> MiniRDD<R> map(Function<T, R> f);
-
-    /**
-     * Filters elements of this RDD using the given predicate.
-     *
-     * @param f The predicate to test each element against
-     * @return A new RDD containing only the elements that satisfy the predicate
-     */
     MiniRDD<T> filter(Predicate<T> f);
-
-    /**
-     * Collects all elements of this RDD into a list.
-     *
-     * @return A list containing all elements
-     */
+    
+    // Actions (eager)
     List<T> collect();
-
-    MiniRDD<T> getParent();
-
-    Function<?, T> getTransformation();
 }
 

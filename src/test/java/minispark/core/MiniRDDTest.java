@@ -1,5 +1,7 @@
 package minispark.core;
 
+import minispark.MiniSparkContext;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import java.util.Arrays;
 import java.util.List;
@@ -7,11 +9,17 @@ import java.util.ArrayList;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MiniRDDTest {
+    private MiniSparkContext sc;
+
+    @BeforeEach
+    void setUp() {
+        sc = new MiniSparkContext(2); // Use 2 partitions for testing
+    }
     
     @Test
     void shouldTransformDataUsingMapAndFilter() {
         List<Integer> data = Arrays.asList(1, 2, 3, 4, 5);
-        CollectionRDD<Integer> rdd = new CollectionRDD<>(data);
+        MiniRDD<Integer> rdd = sc.parallelize(data);
         
         List<String> result = rdd
             .filter(num -> num % 2 == 0)
@@ -24,7 +32,7 @@ class MiniRDDTest {
     @Test
     void shouldHandleEmptyRDD() {
         List<Integer> data = new ArrayList<>();
-        CollectionRDD<Integer> rdd = new CollectionRDD<>(data);
+        MiniRDD<Integer> rdd = sc.parallelize(data);
         
         List<Integer> result = rdd
             .filter(x -> x > 0)
@@ -36,7 +44,7 @@ class MiniRDDTest {
     @Test
     void shouldPreserveLaziness() {
         List<Integer> data = Arrays.asList(1, 2, 3);
-        CollectionRDD<Integer> rdd = new CollectionRDD<>(data);
+        MiniRDD<Integer> rdd = sc.parallelize(data);
         
         // These transformations should not be executed yet
         MiniRDD<Integer> filtered = rdd.filter(x -> {
@@ -55,7 +63,7 @@ class MiniRDDTest {
     @Test
     void shouldPreserveTransformationOrder() {
         List<Integer> data = Arrays.asList(1, 2, 3, 4, 5);
-        CollectionRDD<Integer> rdd = new CollectionRDD<>(data);
+        MiniRDD<Integer> rdd = sc.parallelize(data);
         
         List<Integer> result = rdd
             .map(x -> x * 2)      // [2, 4, 6, 8, 10]
@@ -69,7 +77,7 @@ class MiniRDDTest {
     @Test
     void shouldHandleNullValues() {
         List<String> data = Arrays.asList("a", null, "b", null, "c");
-        CollectionRDD<String> rdd = new CollectionRDD<>(data);
+        MiniRDD<String> rdd = sc.parallelize(data);
         
         List<String> result = rdd
             .filter(s -> s != null)
@@ -82,7 +90,7 @@ class MiniRDDTest {
     @Test
     void shouldChainMultipleFilters() {
         List<Integer> data = Arrays.asList(1, 2, 3, 4, 5, 6);
-        CollectionRDD<Integer> rdd = new CollectionRDD<>(data);
+        MiniRDD<Integer> rdd = sc.parallelize(data);
         
         List<Integer> result = rdd
             .filter(x -> x % 2 == 0)  // [2, 4, 6]
