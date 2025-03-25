@@ -1,11 +1,9 @@
-package minispark.network;
+package minispark.objectstore;
 
-import minispark.messages.Message;
-import minispark.messages.PutObjectMessage;
-import minispark.messages.GetObjectMessage;
-import minispark.messages.DeleteObjectMessage;
-import minispark.messages.ListObjectsMessage;
-import minispark.objectstore.LocalStorageNode;
+import minispark.network.MessageBus;
+import minispark.network.NetworkEndpoint;
+
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -26,8 +24,8 @@ public class TestObjectStore {
             // Initialize Server
             Server server = new Server(storageNode, messageBus, serverEndpoint);
             
-            // Initialize Client
-            Client client = new Client(messageBus, clientEndpoint, serverEndpoint);
+            // Initialize Client with list of server endpoints
+            Client client = new Client(messageBus, clientEndpoint, Arrays.asList(serverEndpoint));
             
             // Test PUT operation
             String key = "testKey";
