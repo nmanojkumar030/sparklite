@@ -10,38 +10,38 @@ import java.util.function.Predicate;
 public class ParallelCollectionRDD<T> implements MiniRDD<T> {
     private final MiniSparkContext sc;
     private final List<T> data;
-    private final int numSlices;
-    private Partition[] partitions;
+    private final int numPartitions;
 
-    public ParallelCollectionRDD(MiniSparkContext sc, List<T> data, int numSlices) {
+    public ParallelCollectionRDD(MiniSparkContext sc, List<T> data, int numPartitions) {
         this.sc = sc;
-        this.data = data;
-        this.numSlices = numSlices;
-        this.partitions = computePartitions();
-    }
-
-    private Partition[] computePartitions() {
-        Partition[] result = new Partition[numSlices];
-        for (int i = 0; i < numSlices; i++) {
-            result[i] = new CollectionPartition(i);
-        }
-        return result;
+        this.data = new ArrayList<>(data);
+        this.numPartitions = numPartitions;
     }
 
     @Override
     public Partition[] getPartitions() {
-        return partitions;
+        @SuppressWarnings("unchecked")
+        Partition[] result = new Partition[numPartitions];
+        int itemsPerPartition = (int) Math.ceil((double) data.size() / numPartitions);
+
+        for (int i = 0; i < numPartitions; i++) {
+            int start = i * itemsPerPartition;
+            int end = Math.min(start + itemsPerPartition, data.size());
+            List<T> partitionData = data.subList(start, end);
+            result[i] = new Partition<>(i, partitionData.iterator());
+        }
+
+        return result;
     }
 
     @Override
     public Iterator<T> compute(Partition split) {
-        CollectionPartition partition = (CollectionPartition) split;
-        int start = partition.index() * (data.size() / numSlices);
-        int end = (partition.index() + 1) * (data.size() / numSlices);
-        if (partition.index() == numSlices - 1) {
-            end = data.size();
+        if (!(split instanceof Partition)) {
+            throw new IllegalArgumentException("Invalid partition type");
         }
-        return data.subList(start, end).iterator();
+        @SuppressWarnings("unchecked")
+        Partition<T> typedSplit = (Partition<T>) split;
+        return typedSplit.iterator();
     }
 
     @Override
@@ -64,7 +64,6 @@ public class ParallelCollectionRDD<T> implements MiniRDD<T> {
         return new FilterRDD<>(this, f);
     }
 
-    @Override
     public List<T> collect() {
         List<T> result = new ArrayList<>();
         for (Partition partition : getPartitions()) {
@@ -74,18 +73,5 @@ public class ParallelCollectionRDD<T> implements MiniRDD<T> {
             }
         }
         return result;
-    }
-
-    private class CollectionPartition implements Partition {
-        private final int idx;
-
-        CollectionPartition(int idx) {
-            this.idx = idx;
-        }
-
-        @Override
-        public int index() {
-            return idx;
-        }
     }
 } 
