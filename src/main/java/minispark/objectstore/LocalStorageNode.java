@@ -4,51 +4,142 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.Comparator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class LocalStorageNode {
-    private final Path storageDirectory;
+    private final Path basePath;
+    private final Map<Path, Lock> pathLocks = new ConcurrentHashMap<>();
+    private static final Logger logger = LoggerFactory.getLogger(LocalStorageNode.class);
 
-    public LocalStorageNode(String directory) throws IOException {
-        this.storageDirectory = Paths.get(directory);
-        Files.createDirectories(storageDirectory);
+    public LocalStorageNode(String basePath) {
+        this(Paths.get(basePath));
     }
 
-    public void putObject(String key, byte[] data) {
+    public LocalStorageNode(Path basePath) {
+        this.basePath = basePath;
+        createDirectoryIfNotExists(basePath);
+    }
+
+    public void putObject(String key, byte[] data) throws IOException {
+        putObjectWithLock(key, data, true);
+    }
+
+    public void putObjectWithLock(String key, byte[] data, boolean overwrite) throws IOException {
+        Path filePath = basePath.resolve(key);
+        Lock lock = pathLocks.computeIfAbsent(filePath, k -> new ReentrantLock());
+        lock.lock();
         try {
-            Path objectPath = storageDirectory.resolve(key);
-            Files.write(objectPath, data);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to store object: " + key, e);
+            if (!overwrite && Files.exists(filePath)) {
+                throw new IOException("File already exists: " + filePath);
+            }
+            Files.createDirectories(filePath.getParent());
+            Path tempFile = Files.createTempFile(filePath.getParent(), "temp_", null);
+            try {
+                Files.write(tempFile, data);
+                Files.move(tempFile, filePath, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException e) {
+                Files.deleteIfExists(tempFile);
+                throw e;
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
-    public byte[] getObject(String key) {
-        try {
-            Path objectPath = storageDirectory.resolve(key);
-            return Files.readAllBytes(objectPath);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to retrieve object: " + key, e);
+    public byte[] getObject(String key) throws IOException {
+        Path path = basePath.resolve(key);
+        if (!Files.exists(path)) {
+            throw new IOException("Failed to retrieve object: " + key);
         }
+        return Files.readAllBytes(path);
     }
 
-    public void deleteObject(String key) {
-        try {
-            Path objectPath = storageDirectory.resolve(key);
-            Files.deleteIfExists(objectPath);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to delete object: " + key, e);
-        }
+    public void deleteObject(String key) throws IOException {
+        Path path = basePath.resolve(key);
+        Files.deleteIfExists(path);
     }
 
-    public List<String> listObjects() {
-        try {
-            return Files.list(storageDirectory)
-                .map(path -> path.getFileName().toString())
+    public List<String> listObjects(String prefix) throws IOException {
+        Path prefixPath = prefix.isEmpty() ? basePath : basePath.resolve(prefix);
+        if (!Files.exists(prefixPath)) {
+            Files.createDirectories(prefixPath);
+        }
+        try (Stream<Path> paths = Files.walk(prefixPath, 1)) {
+            return paths
+                .filter(p -> !p.equals(prefixPath))
+                .map(p -> basePath.relativize(p).toString())
                 .collect(Collectors.toList());
+        }
+    }
+
+    public List<FileStatus> listObjectsWithMetadata(String prefix) throws IOException {
+        Path prefixPath = basePath.resolve(prefix);
+        if (!Files.exists(prefixPath)) {
+            Files.createDirectories(prefixPath);
+        }
+        try (Stream<Path> paths = Files.walk(prefixPath, 1)) {
+            return paths
+                .filter(p -> !p.equals(prefixPath))
+                .map(p -> {
+                    try {
+                        return new FileStatus(
+                            Files.size(p),
+                            Files.isDirectory(p),
+                            1, // replication factor
+                            4096, // block size
+                            Files.getLastModifiedTime(p).toMillis(),
+                            p.toUri()
+                        );
+                    } catch (IOException e) {
+                        throw new RuntimeException("Failed to get file status", e);
+                    }
+                })
+                .collect(Collectors.toList());
+        }
+    }
+
+    public List<FileStatus> listFrom(String prefix, boolean recursive) throws IOException {
+        Path prefixPath = basePath.resolve(prefix);
+        if (!Files.exists(prefixPath)) {
+            Files.createDirectories(prefixPath);
+        }
+        int maxDepth = recursive ? Integer.MAX_VALUE : 1;
+        try (Stream<Path> paths = Files.walk(prefixPath, maxDepth)) {
+            return paths
+                .filter(p -> !p.equals(prefixPath))
+                .map(p -> {
+                    try {
+                        return new FileStatus(
+                            Files.size(p),
+                            Files.isDirectory(p),
+                            1, // replication factor
+                            4096, // block size
+                            Files.getLastModifiedTime(p).toMillis(),
+                            p.toUri()
+                        );
+                    } catch (IOException e) {
+                        throw new RuntimeException("Failed to get file status", e);
+                    }
+                })
+                .collect(Collectors.toList());
+        }
+    }
+
+    private void createDirectoryIfNotExists(Path path) {
+        try {
+            Files.createDirectories(path);
         } catch (IOException e) {
-            throw new UncheckedIOException("Failed to list objects", e);
+            throw new RuntimeException("Failed to create base directory", e);
         }
     }
 } 

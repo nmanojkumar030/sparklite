@@ -48,13 +48,9 @@ class HashRingRoutingTest {
         // Create servers with local storage
         servers = serverEndpoints.stream()
             .map(endpoint -> {
-                try {
-                    Path serverDir = tempDir.resolve("server-" + endpoint.getPort());
-                    LocalStorageNode storage = new LocalStorageNode(serverDir.toString());
-                    return new Server(storage, messageBus, endpoint);
-                } catch (IOException e) {
-                    throw new RuntimeException("Failed to create server storage", e);
-                }
+                Path serverDir = tempDir.resolve("server-" + endpoint.getPort());
+                LocalStorageNode storage = new LocalStorageNode(serverDir.toString());
+                return new Server("server" + endpoint.getPort(), storage, messageBus, endpoint);
             })
             .toList();
             
@@ -143,7 +139,7 @@ class HashRingRoutingTest {
         NetworkEndpoint newServerEndpoint = new NetworkEndpoint("localhost", 8084);
         Path newServerDir = tempDir.resolve("server-8084");
         LocalStorageNode newStorage = new LocalStorageNode(newServerDir.toString());
-        Server newServer = new Server(newStorage, messageBus, newServerEndpoint);
+        Server newServer = new Server("server" + servers.size(), newStorage, messageBus, newServerEndpoint);
         hashRing.addServer(newServerEndpoint);
         
         // Get new target server

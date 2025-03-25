@@ -8,10 +8,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutionException;
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,8 +30,8 @@ class ObjectStoreTest {
         clientEndpoint = new NetworkEndpoint("localhost", 8080);
         serverEndpoint = new NetworkEndpoint("localhost", 8081);
         storageNode = new LocalStorageNode(tempDir.toString());
-        server = new Server(storageNode, messageBus, serverEndpoint);
-        client = new Client(messageBus, clientEndpoint, Arrays.asList(serverEndpoint));
+        server = new Server("server1", storageNode, messageBus, serverEndpoint);
+        client = new Client(messageBus, clientEndpoint, Collections.singletonList(serverEndpoint));
 
         // Start MessageBus
         messageBus.start();
@@ -76,7 +76,7 @@ class ObjectStoreTest {
         client.putObject("key2", "data2".getBytes()).get(5, TimeUnit.SECONDS);
 
         // Get list of objects
-        List<String> objects = client.listObjects().get(5, TimeUnit.SECONDS);
+        List<String> objects = client.listObjects("").get(5, TimeUnit.SECONDS);
 
         // Verify objects are listed
         assertEquals(2, objects.size(), "Should have 2 objects");

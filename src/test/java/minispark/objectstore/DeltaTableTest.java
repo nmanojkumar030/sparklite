@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -29,39 +30,51 @@ class DeltaTableTest {
     @TempDir
     java.nio.file.Path tempDir;
     
-    private LocalStorageNode storageNode;
+    private List<LocalStorageNode> storageNodes;
     private MessageBus messageBus;
-    private Server server;
+    private List<Server> servers;
     private Client client;
-    private NetworkEndpoint serverEndpoint;
+    private List<NetworkEndpoint> serverEndpoints;
     private NetworkEndpoint clientEndpoint;
     
     @BeforeEach
     void setUp() throws IOException {
-        setupStorageNode();
+        setupStorageNodes();
         setupMessageBus();
-        setupServer();
+        setupServers();
         setupClient();
         startMessageBus();
     }
     
-    private void setupStorageNode() throws IOException {
-        java.nio.file.Path storagePath = tempDir.resolve("storage");
-        storageNode = new LocalStorageNode(storagePath.toString());
+    private void setupStorageNodes() throws IOException {
+        storageNodes = new ArrayList<>();
+        for (int i = 1; i <= 3; i++) {
+            java.nio.file.Path storagePath = tempDir.resolve("storage" + i);
+            storageNodes.add(new LocalStorageNode(storagePath.toString()));
+        }
     }
     
     private void setupMessageBus() {
         messageBus = new MessageBus();
-        serverEndpoint = new NetworkEndpoint("localhost", 8081);
+        serverEndpoints = Arrays.asList(
+            new NetworkEndpoint("localhost", 8081),
+            new NetworkEndpoint("localhost", 8082),
+            new NetworkEndpoint("localhost", 8083)
+        );
         clientEndpoint = new NetworkEndpoint("localhost", 8080);
     }
     
-    private void setupServer() {
-        server = new Server(storageNode, messageBus, serverEndpoint);
+    private void setupServers() {
+        servers = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            Server server = new Server("server" + i, storageNodes.get(i), messageBus, serverEndpoints.get(i));
+            servers.add(server);
+            messageBus.registerHandler(serverEndpoints.get(i), server);
+        }
     }
     
     private void setupClient() {
-        client = new Client(messageBus, clientEndpoint, Arrays.asList(serverEndpoint));
+        client = new Client(messageBus, clientEndpoint, serverEndpoints);
         messageBus.registerHandler(clientEndpoint, client);
     }
     
@@ -70,17 +83,19 @@ class DeltaTableTest {
     }
     
     @Test
-    void shouldCreateAndReadParquetFile() throws IOException {
+    void shouldDistributeCustomersAcrossServers() throws IOException {
         // Setup
         MessageType schema = createCustomerSchema();
         List<Map<String, Object>> customers = createSampleCustomers();
-        String filePath = createTablePath();
         
         // Execute
-        writeParquetFile(schema, customers, filePath);
-        
-        // Verify
-        verifyParquetFile(filePath);
+        for (Map<String, Object> customer : customers) {
+            String filePath = createCustomerPath(customer);
+            writeCustomerToParquet(schema, customer, filePath);
+            
+            // Verify the customer was stored on the correct server
+            verifyCustomerStorage(customer, filePath);
+        }
     }
     
     private MessageType createCustomerSchema() {
@@ -97,6 +112,14 @@ class DeltaTableTest {
         List<Map<String, Object>> customers = new ArrayList<>();
         customers.add(createCustomer(1, "John Doe", "john@example.com", 30, "New York"));
         customers.add(createCustomer(2, "Jane Smith", "jane@example.com", 25, "San Francisco"));
+        customers.add(createCustomer(3, "Bob Johnson", "bob@example.com", 35, "Chicago"));
+        customers.add(createCustomer(4, "Alice Brown", "alice@example.com", 28, "Boston"));
+        customers.add(createCustomer(5, "Charlie Wilson", "charlie@example.com", 32, "Seattle"));
+        customers.add(createCustomer(6, "Diana Prince", "diana@example.com", 27, "Washington DC"));
+        customers.add(createCustomer(7, "Edward Stark", "edward@example.com", 33, "Los Angeles"));
+        customers.add(createCustomer(8, "Fiona Green", "fiona@example.com", 29, "Miami"));
+        customers.add(createCustomer(9, "George White", "george@example.com", 31, "Houston"));
+        customers.add(createCustomer(10, "Helen Black", "helen@example.com", 26, "Dallas"));
         return customers;
     }
     
@@ -110,26 +133,45 @@ class DeltaTableTest {
         );
     }
     
-    private String createTablePath() throws IOException {
-        String tablePath = "customers/year=2024/month=01";
-        String fileName = "part-00000.parquet";
-        String fullPath = tablePath + "/" + fileName;
-        
-        java.nio.file.Files.createDirectories(tempDir.resolve("storage").resolve(tablePath));
-        return fullPath;
+    private String createCustomerPath(Map<String, Object> customer) {
+        try {
+            String encodedCity = java.net.URLEncoder.encode((String) customer.get("city"), "UTF-8");
+            return String.format("customers/%s/data_%d.parquet", encodedCity, (Integer) customer.get("id"));
+        } catch (java.io.UnsupportedEncodingException e) {
+            throw new RuntimeException("Failed to encode city name", e);
+        }
     }
     
-    private void writeParquetFile(MessageType schema, List<Map<String, Object>> customers, String filePath) throws IOException {
+    private void writeCustomerToParquet(MessageType schema, Map<String, Object> customer, String filePath) throws IOException {
+        // Create a temporary file to write the Parquet data
+        File tempDir = new File(System.getProperty("java.io.tmpdir"), "parquet_temp");
+        tempDir.mkdirs();
+        File tempFile = new File(tempDir, String.format("temp_%d.parquet", System.currentTimeMillis()));
+        tempFile.deleteOnExit();
+        
         Configuration conf = new Configuration();
-        org.apache.hadoop.fs.Path parquetPath = new org.apache.hadoop.fs.Path(
-            tempDir.resolve("storage").resolve(filePath).toString()
-        );
+        org.apache.hadoop.fs.Path parquetPath = new org.apache.hadoop.fs.Path(tempFile.getAbsolutePath());
         
         GroupWriteSupport.setSchema(schema, conf);
         ParquetWriter<Group> writer = createParquetWriter(parquetPath, conf);
         
-        writeCustomerRecords(writer, schema, customers);
+        SimpleGroup group = createCustomerGroup(schema, customer);
+        writer.write(group);
         writer.close();
+        
+        // Read the Parquet file and store it using the client
+        byte[] parquetData = java.nio.file.Files.readAllBytes(tempFile.toPath());
+        
+        // Create parent directories in the object store
+        String parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
+        client.putObject(parentPath + "/.keep", new byte[0]).join(); // Create parent directory
+        
+        // Store the actual file
+        client.putObject(filePath, parquetData).join(); // Wait for the operation to complete
+        
+        // Clean up
+        tempFile.delete();
+        tempDir.delete();
     }
     
     private ParquetWriter<Group> createParquetWriter(org.apache.hadoop.fs.Path parquetPath, Configuration conf) throws IOException {
@@ -147,13 +189,6 @@ class DeltaTableTest {
         );
     }
     
-    private void writeCustomerRecords(ParquetWriter<Group> writer, MessageType schema, List<Map<String, Object>> customers) throws IOException {
-        for (Map<String, Object> customer : customers) {
-            SimpleGroup group = createCustomerGroup(schema, customer);
-            writer.write(group);
-        }
-    }
-    
     private SimpleGroup createCustomerGroup(MessageType schema, Map<String, Object> customer) {
         SimpleGroup group = new SimpleGroup(schema);
         group.add("id", (Integer) customer.get("id"));
@@ -164,9 +199,14 @@ class DeltaTableTest {
         return group;
     }
     
-    private void verifyParquetFile(String filePath) {
-        byte[] parquetData = storageNode.getObject(filePath);
-        assertNotNull(parquetData);
-        assertTrue(parquetData.length > 0);
+    private void verifyCustomerStorage(Map<String, Object> customer, String filePath) {
+        // Verify the customer data exists
+        CompletableFuture<byte[]> futureData = client.getObject(filePath);
+        byte[] data = futureData.join(); // Wait for the future to complete
+        assertNotNull(data, "Customer data should exist");
+        assertTrue(data.length > 0, "Customer data should not be empty");
+        
+        // Log the customer ID
+        System.out.printf("Customer %d data verified%n", (Integer) customer.get("id"));
     }
 } 

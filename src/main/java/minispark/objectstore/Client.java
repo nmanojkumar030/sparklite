@@ -42,7 +42,7 @@ public class Client implements MessageBus.MessageHandler {
         CompletableFuture<Object> future = new CompletableFuture<>();
         String requestKey = createRequestKey("PUT_OBJECT", key);
         pendingRequests.put(requestKey, future);
-        PutObjectMessage message = new PutObjectMessage(key, data);
+        PutObjectMessage message = new PutObjectMessage(key, data, true);
         NetworkEndpoint targetServer = getTargetServer(key);
         messageBus.send(message, clientEndpoint, targetServer);
         return future.thenAccept(response -> {
@@ -89,12 +89,12 @@ public class Client implements MessageBus.MessageHandler {
         });
     }
 
-    public CompletableFuture<List<String>> listObjects() {
-        logger.debug("Sending LIST_OBJECTS");
+    public CompletableFuture<List<String>> listObjects(String prefix) {
+        logger.debug("Sending LIST_OBJECTS with prefix {}", prefix);
         CompletableFuture<Object> future = new CompletableFuture<>();
-        String requestKey = createRequestKey("LIST_OBJECTS", "list");
+        String requestKey = createRequestKey("LIST_OBJECTS", prefix);
         pendingRequests.put(requestKey, future);
-        ListObjectsMessage message = new ListObjectsMessage();
+        ListObjectsMessage message = new ListObjectsMessage(prefix);
         // For list operations, we can use any server since we need to aggregate results
         NetworkEndpoint targetServer = hashRing.getServers().stream().findFirst().orElseThrow();
         messageBus.send(message, clientEndpoint, targetServer);
@@ -128,7 +128,8 @@ public class Client implements MessageBus.MessageHandler {
             key = response.getKey();
             requestKey = createRequestKey("DELETE_OBJECT", key);
         } else if (message instanceof ListObjectsResponseMessage) {
-            requestKey = createRequestKey("LIST_OBJECTS", "list");
+            ListObjectsResponseMessage response = (ListObjectsResponseMessage) message;
+            requestKey = createRequestKey("LIST_OBJECTS", "");
         }
 
         if (requestKey != null) {
