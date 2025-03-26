@@ -70,7 +70,7 @@ public class Server implements MessageBus.MessageHandler {
     private void handlePutObject(PutObjectMessage message, NetworkEndpoint sender) throws IOException {
         logger.debug("Handling PUT_OBJECT for key {}", message.getKey());
         localStorage.putObjectWithLock(message.getKey(), message.getData(), message.isOverwrite());
-        PutObjectResponseMessage response = new PutObjectResponseMessage(message.getKey(), true, null);
+        PutObjectResponseMessage response = new PutObjectResponseMessage(message.getKey(), true, null, message.getCorrelationId());
         messageBus.send(response, endpoint, sender);
         logger.debug("Sent PUT_OBJECT_RESPONSE for key {} to {}", message.getKey(), sender);
     }
@@ -78,7 +78,7 @@ public class Server implements MessageBus.MessageHandler {
     private void handleGetObject(GetObjectMessage message, NetworkEndpoint sender) throws IOException {
         logger.debug("Handling GET_OBJECT for key {}", message.getKey());
         byte[] data = localStorage.getObject(message.getKey());
-        GetObjectResponseMessage response = new GetObjectResponseMessage(message.getKey(), data, true, null);
+        GetObjectResponseMessage response = new GetObjectResponseMessage(message.getKey(), data, true, null, message.getCorrelationId());
         messageBus.send(response, endpoint, sender);
         logger.debug("Sent GET_OBJECT_RESPONSE for key {} to {}", message.getKey(), sender);
     }
@@ -86,7 +86,7 @@ public class Server implements MessageBus.MessageHandler {
     private void handleDeleteObject(DeleteObjectMessage message, NetworkEndpoint sender) throws IOException {
         logger.debug("Handling DELETE_OBJECT for key {}", message.getKey());
         localStorage.deleteObject(message.getKey());
-        DeleteObjectResponseMessage response = new DeleteObjectResponseMessage(message.getKey(), true, null);
+        DeleteObjectResponseMessage response = new DeleteObjectResponseMessage(message.getKey(), true, null, message.getCorrelationId());
         messageBus.send(response, endpoint, sender);
         logger.debug("Sent DELETE_OBJECT_RESPONSE for key {} to {}", message.getKey(), sender);
     }
@@ -130,13 +130,13 @@ public class Server implements MessageBus.MessageHandler {
     private void sendErrorResponse(Message originalMessage, NetworkEndpoint sender, String errorMessage) {
         Message errorResponse;
         if (originalMessage instanceof PutObjectMessage) {
-            errorResponse = new PutObjectResponseMessage(((PutObjectMessage) originalMessage).getKey(), false, errorMessage);
+            errorResponse = new PutObjectResponseMessage(((PutObjectMessage) originalMessage).getKey(), false, errorMessage, originalMessage.getCorrelationId());
         } else if (originalMessage instanceof GetObjectMessage) {
-            errorResponse = new GetObjectResponseMessage(((GetObjectMessage) originalMessage).getKey(), null, false, errorMessage);
+            errorResponse = new GetObjectResponseMessage(((GetObjectMessage) originalMessage).getKey(), null, false, errorMessage, originalMessage.getCorrelationId());
         } else if (originalMessage instanceof DeleteObjectMessage) {
-            errorResponse = new DeleteObjectResponseMessage(((DeleteObjectMessage) originalMessage).getKey(), false, errorMessage);
+            errorResponse = new DeleteObjectResponseMessage(((DeleteObjectMessage) originalMessage).getKey(), false, errorMessage, originalMessage.getCorrelationId());
         } else if (originalMessage instanceof ListObjectsMessage) {
-            errorResponse = new ListObjectsResponseMessage(null, false, errorMessage, ((ListObjectsMessage) originalMessage).getPrefix(), ((ListObjectsMessage) originalMessage).getCorrelationId());
+            errorResponse = new ListObjectsResponseMessage(null, false, errorMessage, ((ListObjectsMessage) originalMessage).getPrefix(), originalMessage.getCorrelationId());
         } else if (originalMessage instanceof ListObjectsWithMetadataMessage) {
             errorResponse = new ListObjectsWithMetadataResponseMessage(null, false, errorMessage);
         } else if (originalMessage instanceof ListFromMessage) {

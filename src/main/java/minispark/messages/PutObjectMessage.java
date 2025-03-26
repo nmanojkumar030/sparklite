@@ -11,6 +11,13 @@ public class PutObjectMessage extends Message {
         this.data = data;
         this.overwrite = overwrite;
     }
+    
+    public PutObjectMessage(String key, byte[] data, boolean overwrite, String correlationId) {
+        super(MessageType.PUT_OBJECT, correlationId);
+        this.key = key;
+        this.data = data;
+        this.overwrite = overwrite;
+    }
 
     public String getKey() {
         return key;

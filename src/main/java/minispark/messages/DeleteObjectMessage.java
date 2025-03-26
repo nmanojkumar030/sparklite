@@ -7,6 +7,11 @@ public class DeleteObjectMessage extends Message {
         super(MessageType.DELETE_OBJECT);
         this.key = key;
     }
+    
+    public DeleteObjectMessage(String key, String correlationId) {
+        super(MessageType.DELETE_OBJECT, correlationId);
+        this.key = key;
+    }
 
     public String getKey() {
         return key;

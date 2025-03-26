@@ -11,6 +11,13 @@ public class DeleteObjectResponseMessage extends Message {
         this.success = success;
         this.errorMessage = errorMessage;
     }
+    
+    public DeleteObjectResponseMessage(String key, boolean success, String errorMessage, String correlationId) {
+        super(MessageType.DELETE_OBJECT_RESPONSE, correlationId);
+        this.key = key;
+        this.success = success;
+        this.errorMessage = errorMessage;
+    }
 
     public String getKey() {
         return key;

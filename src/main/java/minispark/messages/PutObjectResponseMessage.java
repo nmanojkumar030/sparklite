@@ -11,6 +11,13 @@ public class PutObjectResponseMessage extends Message {
         this.success = success;
         this.errorMessage = errorMessage;
     }
+    
+    public PutObjectResponseMessage(String key, boolean success, String errorMessage, String correlationId) {
+        super(MessageType.PUT_OBJECT_RESPONSE, correlationId);
+        this.key = key;
+        this.success = success;
+        this.errorMessage = errorMessage;
+    }
 
     public String getKey() {
         return key;

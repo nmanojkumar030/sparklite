@@ -13,6 +13,14 @@ public class GetObjectResponseMessage extends Message {
         this.success = success;
         this.errorMessage = errorMessage;
     }
+    
+    public GetObjectResponseMessage(String key, byte[] data, boolean success, String errorMessage, String correlationId) {
+        super(MessageType.GET_OBJECT_RESPONSE, correlationId);
+        this.key = key;
+        this.data = data;
+        this.success = success;
+        this.errorMessage = errorMessage;
+    }
 
     public String getKey() {
         return key;

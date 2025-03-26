@@ -51,9 +51,9 @@ public class Client implements MessageBus.MessageHandler {
     public CompletableFuture<Void> putObject(String key, byte[] data) {
         logger.debug("Sending PUT_OBJECT for key {}", key);
         CompletableFuture<Object> future = new CompletableFuture<>();
-        String requestKey = createRequestKey("PUT_OBJECT", key);
-        pendingRequests.put(requestKey, future);
-        PutObjectMessage message = new PutObjectMessage(key, data, true);
+        String correlationId = UUID.randomUUID().toString();
+        pendingRequests.put(correlationId, future);
+        PutObjectMessage message = new PutObjectMessage(key, data, true, correlationId);
         NetworkEndpoint targetServer = getTargetServer(key);
         messageBus.send(message, clientEndpoint, targetServer);
         return future.thenAccept(response -> {
@@ -68,9 +68,9 @@ public class Client implements MessageBus.MessageHandler {
     public CompletableFuture<byte[]> getObject(String key) {
         logger.debug("Sending GET_OBJECT for key {}", key);
         CompletableFuture<Object> future = new CompletableFuture<>();
-        String requestKey = createRequestKey("GET_OBJECT", key);
-        pendingRequests.put(requestKey, future);
-        GetObjectMessage message = new GetObjectMessage(key);
+        String correlationId = UUID.randomUUID().toString();
+        pendingRequests.put(correlationId, future);
+        GetObjectMessage message = new GetObjectMessage(key, correlationId);
         NetworkEndpoint targetServer = getTargetServer(key);
         messageBus.send(message, clientEndpoint, targetServer);
         return future.thenApply(response -> {
@@ -86,9 +86,9 @@ public class Client implements MessageBus.MessageHandler {
     public CompletableFuture<Void> deleteObject(String key) {
         logger.debug("Sending DELETE_OBJECT for key {}", key);
         CompletableFuture<Object> future = new CompletableFuture<>();
-        String requestKey = createRequestKey("DELETE_OBJECT", key);
-        pendingRequests.put(requestKey, future);
-        DeleteObjectMessage message = new DeleteObjectMessage(key);
+        String correlationId = UUID.randomUUID().toString();
+        pendingRequests.put(correlationId, future);
+        DeleteObjectMessage message = new DeleteObjectMessage(key, correlationId);
         NetworkEndpoint targetServer = getTargetServer(key);
         messageBus.send(message, clientEndpoint, targetServer);
         return future.thenAccept(response -> {
@@ -134,32 +134,17 @@ public class Client implements MessageBus.MessageHandler {
 
     @Override
     public void handleMessage(Message message, NetworkEndpoint sender) {
-        String requestKey = null;
-        switch (message.getType()) {
-            case PUT_OBJECT_RESPONSE:
-                requestKey = createRequestKey("PUT_OBJECT", ((PutObjectResponseMessage) message).getKey());
-                break;
-            case GET_OBJECT_RESPONSE:
-                requestKey = createRequestKey("GET_OBJECT", ((GetObjectResponseMessage) message).getKey());
-                break;
-            case DELETE_OBJECT_RESPONSE:
-                requestKey = createRequestKey("DELETE_OBJECT", ((DeleteObjectResponseMessage) message).getKey());
-                break;
-            case LIST_OBJECTS_RESPONSE:
-                ListObjectsResponseMessage resp = (ListObjectsResponseMessage) message;
-                // Use the correlation ID from the response
-                requestKey = resp.getCorrelationId();
-                break;
-            default:
-                logger.warn("Received unknown message type: {}", message.getType());
-                return;
+        String correlationId = message.getCorrelationId();
+        if (correlationId == null) {
+            logger.warn("Received message with null correlationId: {}", message.getType());
+            return;
         }
 
-        CompletableFuture<Object> future = pendingRequests.remove(requestKey);
+        CompletableFuture<Object> future = pendingRequests.remove(correlationId);
         if (future != null) {
             future.complete(message);
         } else {
-            logger.warn("No pending request found for key: {}", requestKey);
+            logger.warn("No pending request found for correlationId: {}", correlationId);
         }
     }
 
