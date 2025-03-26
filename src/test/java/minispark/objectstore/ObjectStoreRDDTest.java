@@ -4,6 +4,7 @@ import minispark.MiniSparkContext;
 import minispark.core.MiniRDD;
 import minispark.network.MessageBus;
 import minispark.network.NetworkEndpoint;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -11,6 +12,10 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutionException;
+import java.util.Collections;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -24,7 +29,7 @@ class ObjectStoreRDDTest {
     private NetworkEndpoint clientEndpoint;
 
     @BeforeEach
-    void setUp(@TempDir Path tempDir) {
+    void setUp(@TempDir Path tempDir) throws Exception {
         // Create test directories and initialize components
         sc = new MiniSparkContext(2); // 2 partitions for testing
         messageBus = new MessageBus();
@@ -38,86 +43,64 @@ class ObjectStoreRDDTest {
         
         // Setup Server and Client
         objectStoreServer = new Server("test-server", localStorage, messageBus, serverEndpoint);
-        objectStoreClient = new Client(messageBus, clientEndpoint, Arrays.asList(serverEndpoint));
+        objectStoreClient = new Client(messageBus, clientEndpoint, Collections.singletonList(serverEndpoint));
         
-        // Start the message bus
+        // Start message bus
         messageBus.start();
     }
 
-    @Test
-    void testReadFromObjectStore() throws Exception {
-        // Prepare test data
-        String baseKey = "test-data";
-        byte[] testData = "Hello, World!".getBytes();
-        
-        // Write test data to ObjectStore with partition-specific keys
-        localStorage.putObject(baseKey + "-part-0", testData);
-        localStorage.putObject(baseKey + "-part-1", testData);
-        
-        // Create ObjectStoreRDD
-        ObjectStoreRDD<String> rdd = new ObjectStoreRDD<>(sc, objectStoreClient, baseKey, 2);
-        
-        // Verify partitions
-        assertEquals(2, rdd.getPartitions().length);
-        
-        // Collect and verify data
-        List<String> result = rdd.collect();
-        assertEquals(2, result.size());
-        assertEquals("Hello, World!", result.get(0));
-        assertEquals("Hello, World!", result.get(1));
+    @AfterEach
+    void tearDown() {
+        messageBus.stop();
     }
 
     @Test
-    void testReadWithMultiplePartitions() throws Exception {
-        // Prepare test data
-        String baseKey = "test-data";
-        byte[] testData = "Hello, World!".getBytes();
-        
-        // Write test data to ObjectStore with partition-specific keys
-        localStorage.putObject(baseKey + "-part-0", testData);
-        localStorage.putObject(baseKey + "-part-1", testData);
-        localStorage.putObject(baseKey + "-part-2", testData);
-        localStorage.putObject(baseKey + "-part-3", testData);
-        
-        // Create ObjectStoreRDD with 4 partitions
-        ObjectStoreRDD<String> rdd = new ObjectStoreRDD<>(sc, objectStoreClient, baseKey, 4);
-        
-        // Verify partitions
-        assertEquals(4, rdd.getPartitions().length);
-        
-        // Collect and verify data
-        List<String> result = rdd.collect();
-        assertEquals(4, result.size());
-        assertEquals("Hello, World!", result.get(0));
-        assertEquals("Hello, World!", result.get(1));
-        assertEquals("Hello, World!", result.get(2));
-        assertEquals("Hello, World!", result.get(3));
-    }
-
-    @Test
-    void testReadNonExistentData() {
-        // Create ObjectStoreRDD for non-existent key
-        ObjectStoreRDD<String> rdd = new ObjectStoreRDD<>(sc, objectStoreClient, "non-existent-key", 2);
-        
-        // Verify that reading non-existent data throws exception
-        assertThrows(RuntimeException.class, () -> rdd.collect());
-    }
-
-    @Test
-    void testReadWithEmptyData() throws Exception {
-        // Prepare test data
-        String baseKey = "empty-data";
-        byte[] testData = "".getBytes();
-        
-        // Write empty data to ObjectStore with partition-specific keys
-        localStorage.putObject(baseKey + "-part-0", testData);
-        localStorage.putObject(baseKey + "-part-1", testData);
-        
-        // Create ObjectStoreRDD
-        ObjectStoreRDD<String> rdd = new ObjectStoreRDD<>(sc, objectStoreClient, baseKey, 2);
-        
-        // Collect and verify empty result
-        List<String> result = rdd.collect();
+    void testEmptyRDD() throws Exception {
+        ObjectStoreRDD rdd = new ObjectStoreRDD(sc, objectStoreClient, "test-", 2);
+        List<byte[]> result = rdd.collect();
         assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void shouldMapAndFilterObjects() throws Exception {
+        // Create test data
+        String[] testData = {
+            "customer-1:John Doe:30",
+            "customer-2:Jane Smith:25",
+            "customer-3:Bob Johnson:35",
+            "customer-4:Alice Brown:28",
+            "customer-5:Charlie Wilson:42"
+        };
+
+        // Write test data
+        for (String data : testData) {
+            String key = data.split(":")[0];
+            objectStoreClient.putObject(key, data.getBytes()).get(5, TimeUnit.SECONDS);
+        }
+
+        // Create RDD
+        ObjectStoreRDD rdd = new ObjectStoreRDD(sc, objectStoreClient, "customer-", 2);
+
+        // Test map operation
+        List<String> mappedNames = rdd.map(line -> new String(line).split(":")[1]).collect();
+        assertEquals(5, mappedNames.size());
+        assertTrue(mappedNames.contains("John Doe"));
+        assertTrue(mappedNames.contains("Jane Smith"));
+
+        // Test filter operation
+        List<byte[]> filteredAges = rdd.filter(line -> Integer.parseInt(new String(line).split(":")[2]) > 30).collect();
+        List<String> filetered = filteredAges.stream().map(b -> new String(b)).collect(Collectors.toList());
+        assertEquals(2, filteredAges.size());
+        assertTrue(filetered.contains("customer-3:Bob Johnson:35"));
+        assertTrue(filetered.contains("customer-5:Charlie Wilson:42"));
+
+        // Test chaining operations
+        List<String> mappedAndFiltered = rdd
+            .map(line -> new String(line).split(":")[2])
+            .filter(age -> Integer.parseInt(age) > 30)
+            .collect();
+        assertEquals(2, mappedAndFiltered.size());
+        assertTrue(mappedAndFiltered.contains("35"));
+        assertTrue(mappedAndFiltered.contains("42"));
     }
 } 

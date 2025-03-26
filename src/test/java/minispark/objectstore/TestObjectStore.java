@@ -6,6 +6,7 @@ import minispark.network.NetworkEndpoint;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import minispark.objectstore.serialization.ObjectStoreSerializer;
 
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -38,19 +39,19 @@ class TestObjectStore {
     @Test
     void testPutAndGet() throws Exception {
         String key = "test.txt";
-        byte[] data = "Hello, World!".getBytes();
-        client.putObject(key, data).get(5, TimeUnit.SECONDS);
+        String data = "Hello, World!";
+        client.putObject(key, data.getBytes()).get(5, TimeUnit.SECONDS);
         byte[] retrieved = client.getObject(key).get(5, TimeUnit.SECONDS);
-        assertArrayEquals(data, retrieved);
+        assertArrayEquals(data.getBytes(), retrieved);
     }
 
     @Test
     void testListObjects() throws Exception {
         String key1 = "test1.txt";
         String key2 = "test2.txt";
-        byte[] data = "Hello".getBytes();
-        client.putObject(key1, data).get(5, TimeUnit.SECONDS);
-        client.putObject(key2, data).get(5, TimeUnit.SECONDS);
+        String data = "Hello";
+        client.putObject(key1, data.getBytes()).get(5, TimeUnit.SECONDS);
+        client.putObject(key2, data.getBytes()).get(5, TimeUnit.SECONDS);
         List<String> objects = client.listObjects("").get(5, TimeUnit.SECONDS);
         assertTrue(objects.contains(key1));
         assertTrue(objects.contains(key2));

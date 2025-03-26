@@ -97,7 +97,7 @@ class DeltaLogTest {
             
             // Store the JSON log
             byte[] logData = objectMapper.writeValueAsBytes(transactionLog);
-            client.putObject(logPath, logData);
+            client.putObject(logPath, logData).join();
             
             // Verify the log was stored
             CompletableFuture<byte[]> futureData = client.getObject(logPath);

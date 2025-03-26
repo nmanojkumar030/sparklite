@@ -6,6 +6,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import minispark.objectstore.serialization.ObjectStoreSerializer;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -46,20 +47,20 @@ class ObjectStoreTest {
     void shouldPutAndGetObject() throws Exception {
         // Test data
         String key = "test-key";
-        byte[] data = "Hello, World!".getBytes();
+        String data = "Hello, World!";
 
         // Put object and wait for completion
-        client.putObject(key, data).get(5, TimeUnit.SECONDS);
+        client.putObject(key, data.getBytes()).get(5, TimeUnit.SECONDS);
 
         // Get object and verify
         byte[] retrievedData = client.getObject(key).get(5, TimeUnit.SECONDS);
-        assertArrayEquals(data, retrievedData, "Retrieved data should match stored data");
+        assertEquals(data, new String(retrievedData), "Retrieved data should match stored data");
     }
 
     @Test
     void shouldDeleteObject() throws Exception {
-        byte[] data = "test data".getBytes();
-        client.putObject("test-key", data).get(5, TimeUnit.SECONDS);
+        String data = "test data";
+        client.putObject("test-key", data.getBytes()).get(5, TimeUnit.SECONDS);
         client.deleteObject("test-key").get(5, TimeUnit.SECONDS);
 
         ExecutionException exception = assertThrows(ExecutionException.class, () -> {

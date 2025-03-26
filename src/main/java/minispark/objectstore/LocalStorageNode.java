@@ -74,11 +74,27 @@ public class LocalStorageNode {
         if (!Files.exists(prefixPath)) {
             Files.createDirectories(prefixPath);
         }
-        try (Stream<Path> paths = Files.walk(prefixPath, 1)) {
-            return paths
-                .filter(p -> !p.equals(prefixPath))
-                .map(p -> basePath.relativize(p).toString())
+        logger.debug("Listing objects with prefix: {}, prefixPath: {}", prefix, prefixPath);
+        try (Stream<Path> paths = Files.walk(basePath, Integer.MAX_VALUE)) {
+            List<String> result = paths
+                .filter(p -> {
+                    boolean isBasePath = p.equals(basePath);
+                    boolean isPrefixPath = !prefix.isEmpty() && p.equals(prefixPath);
+                    boolean startsWithPrefix = p.toString().startsWith(prefixPath.toString());
+                    boolean isFile = Files.isRegularFile(p);
+                    boolean matches = !isBasePath && !isPrefixPath && startsWithPrefix && isFile;
+                    logger.debug("Path: {}, isBasePath: {}, isPrefixPath: {}, startsWithPrefix: {}, isFile: {}, matches: {}", 
+                               p, isBasePath, isPrefixPath, startsWithPrefix, isFile, matches);
+                    return matches;
+                })
+                .map(p -> {
+                    String relative = basePath.relativize(p).toString();
+                    logger.debug("Relative path: {}", relative);
+                    return relative;
+                })
                 .collect(Collectors.toList());
+            logger.debug("Found {} objects: {}", result.size(), result);
+            return result;
         }
     }
 
@@ -116,7 +132,7 @@ public class LocalStorageNode {
         int maxDepth = recursive ? Integer.MAX_VALUE : 1;
         try (Stream<Path> paths = Files.walk(prefixPath, maxDepth)) {
             return paths
-                .filter(p -> !p.equals(prefixPath))
+                .filter(p -> !p.equals(prefixPath) && Files.isRegularFile(p))
                 .map(p -> {
                     try {
                         return new FileStatus(

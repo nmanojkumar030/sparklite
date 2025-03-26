@@ -30,6 +30,10 @@ public class Server implements MessageBus.MessageHandler {
         return endpoint;
     }
 
+    public String getServerId() {
+        return serverId;
+    }
+
     @Override
     public void handleMessage(Message message, NetworkEndpoint sender) {
         logger.debug("Received message of type {} from {}", message.getType(), sender);
@@ -90,7 +94,7 @@ public class Server implements MessageBus.MessageHandler {
     private void handleListObjects(ListObjectsMessage message, NetworkEndpoint sender) throws IOException {
         logger.debug("Handling LIST_OBJECTS with prefix {}", message.getPrefix());
         List<String> objects = localStorage.listObjects(message.getPrefix());
-        ListObjectsResponseMessage response = new ListObjectsResponseMessage(objects, true, null);
+        ListObjectsResponseMessage response = new ListObjectsResponseMessage(objects, true, null, message.getPrefix(), message.getCorrelationId());
         messageBus.send(response, endpoint, sender);
         logger.debug("Sent LIST_OBJECTS_RESPONSE with {} objects to {}", objects.size(), sender);
     }
@@ -132,7 +136,7 @@ public class Server implements MessageBus.MessageHandler {
         } else if (originalMessage instanceof DeleteObjectMessage) {
             errorResponse = new DeleteObjectResponseMessage(((DeleteObjectMessage) originalMessage).getKey(), false, errorMessage);
         } else if (originalMessage instanceof ListObjectsMessage) {
-            errorResponse = new ListObjectsResponseMessage(null, false, errorMessage);
+            errorResponse = new ListObjectsResponseMessage(null, false, errorMessage, ((ListObjectsMessage) originalMessage).getPrefix(), ((ListObjectsMessage) originalMessage).getCorrelationId());
         } else if (originalMessage instanceof ListObjectsWithMetadataMessage) {
             errorResponse = new ListObjectsWithMetadataResponseMessage(null, false, errorMessage);
         } else if (originalMessage instanceof ListFromMessage) {

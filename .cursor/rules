@@ -1,0 +1,117 @@
+// Consider applying Occam's Razor when generating code:
+// - Among competing hypotheses, the one with the fewest assumptions should be selected
+// - The simplest solution is usually the best one
+// - Avoid over-engineering and unnecessary complexity
+// - Question if each component/abstraction is truly necessary
+// - Prefer straightforward solutions over complex ones unless there's a clear benefit 
+
+
+## 1. Occam's Razor
+When there are multiple ways to solve a problem, prefer the simpler solution.
+
+### Examples:
+
+#### ❌ Complex String Manipulation
+```java
+// Complex string parsing
+String[] parts = json.substring(1, json.length() - 1).split(",");
+String id = parts[0].split(":")[1].replace("\"", "");
+String name = parts[1].split(":")[1].replace("\"", "");
+```
+
+#### ✅ Using a JSON Library
+```java
+// Simple JSON parsing using Jackson
+ObjectMapper mapper = new ObjectMapper();
+CustomerProfile profile = mapper.readValue(json, CustomerProfile.class);
+```
+
+#### ❌ Multiple Lists for Related Data
+```java
+List<Server> servers = new ArrayList<>();
+List<NetworkEndpoint> endpoints = new ArrayList<>();
+List<StorageNode> storageNodes = new ArrayList<>();
+```
+
+#### ✅ Single List with Related Components
+```java
+class ServerNode {
+    final Server server;
+    final NetworkEndpoint endpoint;
+    final StorageNode storage;
+}
+
+List<ServerNode> serverNodes = new ArrayList<>();
+```
+
+## 2. Error Handling
+Always handle errors appropriately and provide meaningful error messages.
+
+### Examples:
+
+#### ❌ Ignoring Exceptions
+```java
+try {
+    processData();
+} catch (Exception e) {
+    // Ignoring the error
+}
+```
+
+#### ✅ Proper Error Handling
+```java
+try {
+    processData();
+} catch (IOException e) {
+    logger.error("Failed to process data: {}", e.getMessage());
+    throw new ProcessingException("Data processing failed", e);
+}
+```
+
+## 3. Code Organization
+Keep related code together and separate concerns appropriately.
+
+### Examples:
+
+#### ❌ Mixed Responsibilities
+```java
+class DataProcessor {
+    void processData() { ... }
+    void validateData() { ... }
+    void sendEmail() { ... }  // Unrelated to data processing
+}
+```
+
+#### ✅ Single Responsibility
+```java
+class DataProcessor {
+    void processData() { ... }
+}
+
+class DataValidator {
+    void validateData() { ... }
+}
+
+class NotificationService {
+    void sendEmail() { ... }
+}
+```
+
+## 4. Naming Conventions
+Use clear, descriptive names that indicate purpose and intent.
+
+### Examples:
+
+#### ❌ Unclear Names
+```java
+void p() { ... }
+String x = "data";
+List<Object> l = new ArrayList<>();
+```
+
+#### ✅ Clear Names
+```java
+void processCustomerData() { ... }
+String customerId = "data";
+List<Customer> customers = new ArrayList<>();
+```
