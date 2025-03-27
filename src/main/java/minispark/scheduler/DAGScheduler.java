@@ -56,22 +56,9 @@ public class DAGScheduler {
     }
 
     private ResultStage createResultStage(MiniRDD<?> rdd, int numPartitions, Object jobId) {
-        // First, identify all shuffle dependencies and create ShuffleMapStages for them
-        List<ShuffleMapStage> shuffleStages = new ArrayList<>();
-        for (MiniRDD<?> dep : rdd.getDependencies()) {
-            if (requiresShuffle(dep)) {
-                ShuffleMapStage shuffleStage = getOrCreateShuffleMapStage(dep);
-                shuffleStages.add(shuffleStage);
-            }
-        }
 
         // Create the ResultStage
         ResultStage resultStage = new ResultStage(nextStageId.getAndIncrement(), rdd, numPartitions, jobId);
-        
-        // Add dependencies
-        for (ShuffleMapStage shuffleStage : shuffleStages) {
-            addStageDependency(resultStage.getStageId(), shuffleStage.getStageId());
-        }
 
         // Create tasks for this stage
         createTasksForStage(resultStage);
@@ -102,9 +89,8 @@ public class DAGScheduler {
     }
 
     private boolean requiresShuffle(MiniRDD<?> rdd) {
-        // For now, assume any RDD requires a shuffle. In a real implementation,
-        // we would check the RDD's dependencies to determine this.
-        return true;
+        // For now, not supporting it.
+        return false;
     }
 
     private void addStageDependency(int childStageId, int parentStageId) {
