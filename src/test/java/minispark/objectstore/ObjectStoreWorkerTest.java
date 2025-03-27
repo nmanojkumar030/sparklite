@@ -1,12 +1,8 @@
 package minispark.objectstore;
 
-import minispark.MiniSparkContext;
 import minispark.core.Partition;
 import minispark.core.MiniRDD;
 import minispark.network.MessageBus;
-import minispark.network.NetworkEndpoint;
-import minispark.scheduler.TaskSchedulerImpl;
-import minispark.worker.Worker;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,80 +28,30 @@ import java.util.function.Predicate;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ObjectStoreWorkerTest {
+    private static final Logger logger = LoggerFactory.getLogger(ObjectStoreWorkerTest.class);
+    
     private MessageBus messageBus;
-    private NetworkEndpoint schedulerEndpoint;
-    private NetworkEndpoint clientEndpoint;
-    private TaskSchedulerImpl taskScheduler;
-    private Client client;
-    private List<ServerNode> serverNodes;
-    private List<Worker> workers;
-    private MiniSparkContext sc;
-    private minispark.scheduler.DAGScheduler dagScheduler;
+    private ObjectStoreCluster objectStoreCluster;
+    private SparkCluster sparkCluster;
 
     @BeforeEach
     void setUp(@TempDir Path tempDir) {
         // Initialize message bus
         messageBus = new MessageBus();
         
-        // Initialize endpoints
-        schedulerEndpoint = new NetworkEndpoint("localhost", 8080);
-        clientEndpoint = new NetworkEndpoint("localhost", 8081);
+        // Initialize clusters
+        objectStoreCluster = new ObjectStoreCluster(messageBus, tempDir, 3);
+        sparkCluster = new SparkCluster(messageBus, 2);
         
-        // Initialize scheduler
-        taskScheduler = new TaskSchedulerImpl(schedulerEndpoint, messageBus);
-        
-        // Initialize DAG scheduler
-        dagScheduler = new minispark.scheduler.DAGScheduler(taskScheduler);
-        
-        // Create server nodes
-        int numServers = 3;
-        serverNodes = new ArrayList<>();
-        for (int i = 0; i < numServers; i++) {
-            ServerNode node = new ServerNode(
-                "server-" + i,
-                new LocalStorageNode(tempDir.resolve("server" + i).toString()),
-                new NetworkEndpoint("localhost", 8082 + i)
-            );
-            node.server = new Server(node.id, node.storage, messageBus, node.endpoint);
-            serverNodes.add(node);
-        }
-
-        // Create client with all server endpoints
-        client = new Client(messageBus, clientEndpoint, 
-            serverNodes.stream()
-                .map(node -> node.endpoint)
-                .collect(Collectors.toList()));
-
-        // Create workers
-        int numWorkers = 2;
-        workers = new ArrayList<>();
-        for (int i = 0; i < numWorkers; i++) {
-            NetworkEndpoint workerEndpoint = new NetworkEndpoint("localhost", 8090 + i);
-            Worker worker = new Worker("worker" + i, workerEndpoint, schedulerEndpoint, 2, messageBus);
-            workers.add(worker);
-        }
-
-        // Initialize Spark context
-        sc = new MiniSparkContext(numWorkers);
-
-        // Start all components
-        messageBus.start();
-        taskScheduler.start();
-        workers.forEach(Worker::start);
-
-        // Wait for workers to register
-        try {
-            Thread.sleep(500);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // Start clusters
+        objectStoreCluster.start();
+        sparkCluster.start();
     }
 
     @AfterEach
     void tearDown() {
-        workers.forEach(Worker::stop);
-        taskScheduler.stop();
-        messageBus.stop();
+        sparkCluster.stop();
+        objectStoreCluster.stop();
     }
 
     @Test
@@ -118,21 +64,21 @@ class ObjectStoreWorkerTest {
         for (CustomerProfile customer : customers) {
             String key = "customer-" + customer.getId();
             String jsonData = customer.toJson();
-            client.putObject(key, jsonData.getBytes()).get(5, TimeUnit.SECONDS);
+            objectStoreCluster.getClient().putObject(key, jsonData.getBytes()).get(5, TimeUnit.SECONDS);
             System.out.printf("Inserted customer %s to server %s%n", 
                 customer.getId(), 
-                getServerForKey(key).id);
+                objectStoreCluster.getServerForKey(key).id);
         }
 
         // Create RDD with multiple partitions
-        ObjectStoreRDD rdd = new ObjectStoreRDD(sc, client, "customer-", 2);
+        ObjectStoreRDD rdd = new ObjectStoreRDD(sparkCluster.getSparkContext(), objectStoreCluster.getClient(), "customer-", 2);
         
         // Create a CustomerProcessingRDD that wraps the ObjectStoreRDD
         CustomerProfileRDD customerRdd = new CustomerProfileRDD(rdd);
         
         // Use DAGScheduler to submit the job
         System.out.println("\nSubmitting job through DAGScheduler:");
-        List<CompletableFuture<CustomerProfile>> futures = dagScheduler.submitJob(customerRdd, customerRdd.getPartitions().length);
+        List<CompletableFuture<CustomerProfile>> futures = sparkCluster.getDagScheduler().submitJob(customerRdd, customerRdd.getPartitions().length);
         
         // Wait for all tasks to complete - note: RDDTask only returns first element from each partition
         List<CustomerProfile> processedCustomers = new ArrayList<>();
@@ -161,25 +107,17 @@ class ObjectStoreWorkerTest {
         System.out.println("\nExecution Summary:");
         System.out.printf("Total source customers: %d%n", customers.size());
         System.out.printf("Number of partitions: %d%n", rdd.getPartitions().length); 
-        System.out.printf("Number of workers: %d%n", workers.size());
+        System.out.printf("Number of workers: %d%n", sparkCluster.getWorkers().size());
         
         // Print data distribution
         System.out.println("\nData Distribution Across Servers:");
-        for (ServerNode node : serverNodes) {
-            int count = countObjectsForServer(node.storage);
+        for (ObjectStoreCluster.ServerNode node : objectStoreCluster.getServerNodes()) {
+            int count = objectStoreCluster.countObjectsForServer(node.storage);
             System.out.printf("Server %s (%s): %d objects%n", 
                 node.id, 
                 node.endpoint.toString(), 
                 count);
         }
-    }
-
-    private ServerNode getServerForKey(String key) {
-        NetworkEndpoint targetServer = client.getTargetServer(key);
-        return serverNodes.stream()
-            .filter(node -> node.endpoint.equals(targetServer))
-            .findFirst()
-            .orElseThrow(() -> new RuntimeException("No server found for key: " + key));
     }
 
     private List<CustomerProfile> createCustomerProfiles(int count) {
@@ -193,27 +131,6 @@ class ObjectStoreWorkerTest {
             ));
         }
         return customers;
-    }
-
-    private int countObjectsForServer(LocalStorageNode storageNode) {
-        try {
-            return storageNode.listObjects("").size();
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-
-    private static class ServerNode {
-        final String id;
-        final LocalStorageNode storage;
-        final NetworkEndpoint endpoint;
-        Server server;
-
-        ServerNode(String id, LocalStorageNode storage, NetworkEndpoint endpoint) {
-            this.id = id;
-            this.storage = storage;
-            this.endpoint = endpoint;
-        }
     }
 
     private static class CustomerProfile {
