@@ -50,9 +50,8 @@ public class DAGScheduler {
         ActiveJob<T> job = new ActiveJob<>(jobId, finalRDD, resultStage);
         activeJobs.put(jobId, job);
 
-        // Submit the final stage
-        List<CompletableFuture<T>> futures = submitStage(resultStage);
-        job.futures.addAll(futures);
+        // Submit the final stage and only return futures from the final stage
+        submitStage(resultStage);
         return job.getFutures();
     }
 
@@ -133,6 +132,16 @@ public class DAGScheduler {
         }
 
         List<CompletableFuture<T>> stageFutures = taskScheduler.submitTasks(tasks, stage.getNumPartitions());
+        
+        // Only add futures to job's futures if this is a ResultStage
+        if (stage instanceof ResultStage) {
+            ResultStage resultStage = (ResultStage) stage;
+            ActiveJob<?> job = activeJobs.get(resultStage.getJobId());
+            if (job != null) {
+                ((ActiveJob<T>) job).futures.addAll(stageFutures);
+            }
+        }
+        
         futures.addAll(stageFutures);
 
         // When all futures complete, mark the stage as complete
@@ -152,7 +161,7 @@ public class DAGScheduler {
         return futures;
     }
 
-    private static class ActiveJob<T> {
+    private class ActiveJob<T> {
         private final Object jobId;
         private final MiniRDD<T> finalRDD;
         private final ResultStage finalStage;
@@ -167,6 +176,14 @@ public class DAGScheduler {
 
         public Object getJobId() {
             return jobId;
+        }
+
+        public MiniRDD<T> getFinalRDD() {
+            return finalRDD;
+        }
+
+        public ResultStage getFinalStage() {
+            return finalStage;
         }
 
         public List<CompletableFuture<T>> getFutures() {

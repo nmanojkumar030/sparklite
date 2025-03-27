@@ -41,11 +41,14 @@ public class ObjectStoreRDD implements MiniRDD<byte[]> {
 
     @Override
     public Iterator<byte[]> compute(Partition split) {
-        if (!(split instanceof ObjectStoreRDD.ObjectStorePartition)) {
-            throw new IllegalArgumentException("Invalid partition type");
+        ObjectStorePartition partition;
+        if (split instanceof ObjectStoreRDD.ObjectStorePartition) {
+            partition = (ObjectStorePartition) split;
+        } else {
+            // Create a new partition with the same ID if we received a generic Partition
+            partition = new ObjectStorePartition(split.getPartitionId(), baseKey);
+            logger.debug("Created new ObjectStorePartition from generic partition with ID {}", split.getPartitionId());
         }
-        @SuppressWarnings("unchecked")
-        ObjectStorePartition partition = (ObjectStorePartition) split;
         
         try {
             // List all objects with the base key prefix
