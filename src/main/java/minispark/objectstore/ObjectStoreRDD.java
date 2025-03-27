@@ -6,6 +6,8 @@ import minispark.core.Partition;
 import java.util.*;
 import java.util.function.Function;
 
+import minispark.core.transformations.FilterRDD;
+import minispark.core.transformations.MapRDD;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import minispark.objectstore.serialization.ObjectStoreSerializer;
@@ -99,12 +101,12 @@ public class ObjectStoreRDD implements MiniRDD<byte[]> {
 
     @Override
     public <R> MiniRDD<R> map(java.util.function.Function<byte[], R> f) {
-        return new MappedRDD<>(this, f);
+        return new MapRDD<>(this, f);
     }
 
     @Override
     public MiniRDD<byte[]> filter(java.util.function.Predicate<byte[]> f) {
-        return new FilteredRDD<>(this, f);
+        return new FilterRDD<>(this, f);
     }
 
     @Override
@@ -151,152 +153,5 @@ public class ObjectStoreRDD implements MiniRDD<byte[]> {
         h ^= h >>> r;
         
         return h;
-    }
-
-    private static class MappedRDD<R, T> implements MiniRDD<R> {
-        private final MiniRDD<T> parent;
-        private final java.util.function.Function<T, R> f;
-        private final Partition[] partitions;
-
-        public MappedRDD(MiniRDD<T> parent, java.util.function.Function<T, R> f) {
-            this.parent = parent;
-            this.f = f;
-            this.partitions = parent.getPartitions();
-        }
-
-        @Override
-        public Partition[] getPartitions() {
-            return partitions;
-        }
-
-        @Override
-        public Iterator<R> compute(Partition split) {
-            Iterator<T> parentIter = parent.compute(split);
-            return new Iterator<R>() {
-                @Override
-                public boolean hasNext() {
-                    return parentIter.hasNext();
-                }
-
-                @Override
-                public R next() {
-                    return f.apply(parentIter.next());
-                }
-            };
-        }
-
-        @Override
-        public List<MiniRDD<?>> getDependencies() {
-            return Collections.singletonList(parent);
-        }
-
-        @Override
-        public List<String> getPreferredLocations(Partition split) {
-            return parent.getPreferredLocations(split);
-        }
-
-        @Override
-        public <R2> MiniRDD<R2> map(java.util.function.Function<R, R2> f) {
-            return new MappedRDD<>(this, f);
-        }
-
-        @Override
-        public MiniRDD<R> filter(java.util.function.Predicate<R> f) {
-            return new FilteredRDD<>(this, f);
-        }
-
-        @Override
-        public List<R> collect() {
-            List<R> result = new ArrayList<>();
-            for (Partition partition : getPartitions()) {
-                Iterator<R> iter = compute(partition);
-                while (iter.hasNext()) {
-                    result.add(iter.next());
-                }
-            }
-            return result;
-        }
-    }
-
-    private static class FilteredRDD<T> implements MiniRDD<T> {
-        private final MiniRDD<T> parent;
-        private final java.util.function.Predicate<T> f;
-        private final Partition[] partitions;
-
-        public FilteredRDD(MiniRDD<T> parent, java.util.function.Predicate<T> f) {
-            this.parent = parent;
-            this.f = f;
-            this.partitions = parent.getPartitions();
-        }
-
-        @Override
-        public Partition[] getPartitions() {
-            return partitions;
-        }
-
-        @Override
-        public Iterator<T> compute(Partition split) {
-            Iterator<T> parentIter = parent.compute(split);
-            return new Iterator<T>() {
-                private T next = null;
-                private boolean hasNext = false;
-
-                @Override
-                public boolean hasNext() {
-                    if (!hasNext) {
-                        while (parentIter.hasNext()) {
-                            next = parentIter.next();
-                            if (f.test(next)) {
-                                hasNext = true;
-                                return true;
-                            }
-                        }
-                        return false;
-                    }
-                    return true;
-                }
-
-                @Override
-                public T next() {
-                    if (!hasNext()) {
-                        throw new NoSuchElementException();
-                    }
-                    hasNext = false;
-                    return next;
-                }
-            };
-        }
-
-        @Override
-        public List<MiniRDD<?>> getDependencies() {
-            return Collections.singletonList(parent);
-        }
-
-        @Override
-        public List<String> getPreferredLocations(Partition split) {
-            return parent.getPreferredLocations(split);
-        }
-
-        @Override
-        public <R> MiniRDD<R> map(java.util.function.Function<T, R> f) {
-            return new MappedRDD<>(this, f);
-        }
-
-        @Override
-        public MiniRDD<T> filter(java.util.function.Predicate<T> f) {
-            return new FilteredRDD<>(this, f);
-        }
-
-        @Override
-        public List<T> collect() {
-            List<T> result = new ArrayList<>();
-            for (Partition partition : getPartitions()) {
-                Iterator<T> iter = compute(partition);
-                while (iter.hasNext()) {
-                    result.add(iter.next());
-                }
-            }
-            return result;
-        }
     }
 } 
