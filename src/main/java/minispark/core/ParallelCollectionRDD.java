@@ -7,6 +7,10 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+/**
+ * A simple RDD that represents data already in memory.
+ * The data is distributed evenly across partitions.
+ */
 public class ParallelCollectionRDD<T> implements MiniRDD<T> {
     private final MiniSparkContext sc;
     private final List<T> data;
@@ -20,7 +24,6 @@ public class ParallelCollectionRDD<T> implements MiniRDD<T> {
 
     @Override
     public Partition[] getPartitions() {
-        @SuppressWarnings("unchecked")
         Partition[] result = new Partition[numPartitions];
         int itemsPerPartition = (int) Math.ceil((double) data.size() / numPartitions);
 
@@ -28,7 +31,7 @@ public class ParallelCollectionRDD<T> implements MiniRDD<T> {
             int start = i * itemsPerPartition;
             int end = Math.min(start + itemsPerPartition, data.size());
             List<T> partitionData = data.subList(start, end);
-            result[i] = new Partition<>(i, partitionData.iterator());
+            result[i] = new ParallelCollectionPartition<>(i, partitionData);
         }
 
         return result;
@@ -36,12 +39,14 @@ public class ParallelCollectionRDD<T> implements MiniRDD<T> {
 
     @Override
     public Iterator<T> compute(Partition split) {
-        if (!(split instanceof Partition)) {
-            throw new IllegalArgumentException("Invalid partition type");
+        if (!(split instanceof ParallelCollectionPartition)) {
+            throw new IllegalArgumentException("Invalid partition type: " + 
+                split.getClass().getName() + ", expected: ParallelCollectionPartition");
         }
+        
         @SuppressWarnings("unchecked")
-        Partition<T> typedSplit = (Partition<T>) split;
-        return typedSplit.iterator();
+        ParallelCollectionPartition<T> partition = (ParallelCollectionPartition<T>) split;
+        return partition.iterator();
     }
 
     @Override
@@ -64,6 +69,7 @@ public class ParallelCollectionRDD<T> implements MiniRDD<T> {
         return new FilterRDD<>(this, f);
     }
 
+    @Override
     public List<T> collect() {
         List<T> result = new ArrayList<>();
         for (Partition partition : getPartitions()) {

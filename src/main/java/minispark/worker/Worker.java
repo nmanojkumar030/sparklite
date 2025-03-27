@@ -1,6 +1,7 @@
 package minispark.worker;
 
 import minispark.core.Partition;
+import minispark.core.BasePartition;
 import minispark.core.Task;
 import minispark.messages.Message;
 import minispark.messages.SubmitTaskMessage;
@@ -72,10 +73,10 @@ public class Worker implements MessageBus.MessageHandler {
                     
                     @SuppressWarnings("unchecked")
                     Task<Object, Object> typedTask = (Task<Object, Object>) task;
-                    Partition<Object> partition = new Partition<>(task.getPartitionId(), Collections.emptyIterator());
+                    Partition partition = new BasePartition(task.getPartitionId());
                     
                     logger.debug("Worker {} created partition {} for task {}", 
-                        workerId, partition.getPartitionId(), task.getTaskId());
+                        workerId, partition.index(), task.getTaskId());
                     
                     Object result = typedTask.execute(partition);
                     

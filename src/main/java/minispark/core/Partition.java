@@ -1,36 +1,17 @@
 package minispark.core;
 
 import java.io.Serializable;
-import java.util.Iterator;
 
 /**
- * Represents a partition of data in an RDD.
- *
- * @param <T> The type of data stored in this partition
+ * An identifier for a partition in an RDD.
+ * Each RDD implementation can have its own Partition implementation
+ * that contains the necessary information to identify and access the data.
  */
-public class Partition<T> implements Serializable {
-    private final int partitionId;
-    private final Iterator<T> iterator;
-
-    public Partition(int partitionId, Iterator<T> iterator) {
-        this.partitionId = partitionId;
-        this.iterator = iterator;
-    }
-
-    public int getPartitionId() {
-        return partitionId;
-    }
-
-    public Iterator<T> iterator() {
-        return iterator;
-    }
-
+public interface Partition extends Serializable {
     /**
-     * Get the index of this partition.
+     * Get the index of this partition within its parent RDD.
      *
      * @return The partition index
      */
-    public int index() {
-        return partitionId;
-    }
+    int index();
 } 

@@ -103,7 +103,7 @@ class TaskExecutionTest {
         }
 
         @Override
-        public Integer execute(Partition<Void> partition) {
+        public Integer execute(Partition partition) {
             if (input < 0) {
                 throw new IllegalArgumentException("Input cannot be negative");
             }

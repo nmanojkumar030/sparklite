@@ -3,15 +3,21 @@ package minispark.objectstore;
 import minispark.MiniSparkContext;
 import minispark.core.MiniRDD;
 import minispark.core.Partition;
+
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import minispark.core.transformations.FilterRDD;
 import minispark.core.transformations.MapRDD;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import minispark.objectstore.serialization.ObjectStoreSerializer;
 
+/**
+ * An RDD implementation that reads data from an object store.
+ * It partitions objects based on their keys using a hash function.
+ */
 public class ObjectStoreRDD implements MiniRDD<byte[]> {
     private final MiniSparkContext sc;
     private final Client objectStoreClient;
@@ -43,30 +49,29 @@ public class ObjectStoreRDD implements MiniRDD<byte[]> {
 
     @Override
     public Iterator<byte[]> compute(Partition split) {
-        ObjectStorePartition partition;
-        if (split instanceof ObjectStoreRDD.ObjectStorePartition) {
-            partition = (ObjectStorePartition) split;
-        } else {
-            // Create a new partition with the same ID if we received a generic Partition
-            partition = new ObjectStorePartition(split.getPartitionId(), baseKey);
-            logger.debug("Created new ObjectStorePartition from generic partition with ID {}", split.getPartitionId());
-        }
-        
+        logger.warn("Expected ObjectStorePartition but got {} - attempting to convert", split.getClass().getName());
+        ObjectStorePartition partition = new ObjectStorePartition(split.index(), baseKey);
+        logger.debug("Created new ObjectStorePartition from generic partition with ID {}", split.index());
+        return computePartition(partition);
+
+    }
+
+    private Iterator<byte[]> computePartition(ObjectStorePartition partition) {
         try {
             // List all objects with the base key prefix
-            List<String> allKeys = objectStoreClient.listObjects(baseKey).get();
-            logger.debug("Found {} keys with prefix {}", allKeys.size(), baseKey);
-            
+            List<String> allKeys = objectStoreClient.listObjects(partition.getBaseKey()).get();
+            logger.debug("Found {} keys with prefix {}", allKeys.size(), partition.getBaseKey());
+
             // Filter keys for this partition based on hash
             List<String> partitionKeys = new ArrayList<>();
             for (String key : allKeys) {
-                if (Math.abs(hash(key) % numPartitions) == partition.getPartitionId()) {
+                if (Math.abs(hash(key) % numPartitions) == partition.index()) {
                     partitionKeys.add(key);
-                    logger.debug("Key {} assigned to partition {}", key, partition.getPartitionId());
+                    logger.debug("Key {} assigned to partition {}", key, partition.index());
                 }
             }
-            logger.debug("Partition {} has {} keys", partition.getPartitionId(), partitionKeys.size());
-            
+            logger.debug("Partition {} has {} keys", partition.index(), partitionKeys.size());
+
             // Read data for this partition's keys
             List<byte[]> partitionData = new ArrayList<>();
             for (String key : partitionKeys) {
@@ -80,7 +85,7 @@ public class ObjectStoreRDD implements MiniRDD<byte[]> {
                     logger.warn("Failed to read object with key {}: {}", key, e.getMessage());
                 }
             }
-            
+
             return partitionData.iterator();
         } catch (Exception e) {
             throw new RuntimeException("Failed to read data from ObjectStore", e);
@@ -94,18 +99,17 @@ public class ObjectStoreRDD implements MiniRDD<byte[]> {
 
     @Override
     public List<String> getPreferredLocations(Partition split) {
-        // For now, we don't implement data locality
+        // For now, we don't have information about data locality
         return Collections.emptyList();
     }
 
-
     @Override
-    public <R> MiniRDD<R> map(java.util.function.Function<byte[], R> f) {
+    public <R> MiniRDD<R> map(Function<byte[], R> f) {
         return new MapRDD<>(this, f);
     }
 
     @Override
-    public MiniRDD<byte[]> filter(java.util.function.Predicate<byte[]> f) {
+    public MiniRDD<byte[]> filter(Predicate<byte[]> f) {
         return new FilterRDD<>(this, f);
     }
 
@@ -121,19 +125,6 @@ public class ObjectStoreRDD implements MiniRDD<byte[]> {
         return result;
     }
 
-    public static class ObjectStorePartition extends Partition<byte[]> {
-        private final String baseKey;
-
-        public ObjectStorePartition(int partitionId, String baseKey) {
-            super(partitionId, null);
-            this.baseKey = baseKey;
-        }
-
-        public String getBaseKey() {
-            return baseKey;
-        }
-    }
-
     private long hash(String key) {
         // Using MurmurHash for better distribution
         byte[] data = key.getBytes();
@@ -141,17 +132,17 @@ public class ObjectStoreRDD implements MiniRDD<byte[]> {
         long m = 0xc6a4a7935bd1e995L;
         int r = 47;
         long h = seed ^ (data.length * m);
-        
+
         for (int i = 0; i < data.length; i++) {
             h = (h + (data[i] & 0xFF)) * m;
             h ^= h >>> r;
         }
-        
+
         h *= m;
         h ^= h >>> r;
         h *= m;
         h ^= h >>> r;
-        
+
         return h;
     }
 } 

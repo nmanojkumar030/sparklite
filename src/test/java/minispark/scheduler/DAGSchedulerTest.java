@@ -1,9 +1,9 @@
 package minispark.scheduler;
 
+import minispark.core.BasePartition;
 import minispark.core.MiniRDD;
 import minispark.core.Partition;
 import minispark.core.Task;
-import minispark.core.transformations.MapRDD;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -13,9 +13,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class DAGSchedulerTest {
     private DAGScheduler dagScheduler;
@@ -299,7 +298,7 @@ class DAGSchedulerTest {
         public Partition[] getPartitions() {
             Partition[] partitions = new Partition[numPartitions];
             for (int i = 0; i < numPartitions; i++) {
-                partitions[i] = new Partition<>(i, List.of(i).iterator());
+                partitions[i] = new BasePartition(i);
             }
             return partitions;
         }
@@ -445,7 +444,7 @@ class DAGSchedulerTest {
 
         @Override
         public MiniRDD<T> filter(Predicate<T> f) {
-            return new FilterTransformRDD<>(this, predicate -> filterPredicate.test(predicate) && f.test(predicate));
+            return new FilterTransformRDD<>(this, f);
         }
 
         @Override
@@ -458,21 +457,6 @@ class DAGSchedulerTest {
                 }
             }
             return result;
-        }
-    }
-
-    // Test RDD that simulates a shuffle dependency
-    private static class TestShuffleRDD extends TestRDD {
-        private final TestRDD parent;
-
-        public TestShuffleRDD(TestRDD parent, int numPartitions) {
-            super(numPartitions);
-            this.parent = parent;
-        }
-
-        @Override
-        public List<MiniRDD<?>> getDependencies() {
-            return List.of(parent);
         }
     }
 } 

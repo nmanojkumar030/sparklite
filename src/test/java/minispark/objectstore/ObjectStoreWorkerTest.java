@@ -286,7 +286,7 @@ class ObjectStoreWorkerTest {
         @Override
         public Iterator<CustomerProfile> compute(Partition split) {
             logger.debug("Processing partition {} with base key {}", 
-                split.getPartitionId(), 
+                split.index(), 
                 "customer-");
             
             List<CustomerProfile> processedCustomers = new ArrayList<>();
@@ -299,12 +299,12 @@ class ObjectStoreWorkerTest {
                     processedCustomers.add(customer);
                     logger.debug("Processed customer {} in partition {}", 
                         customer.getId(), 
-                        split.getPartitionId());
+                        split.index());
                 }
             }
             
             logger.debug("Partition {} processed {} customers", 
-                split.getPartitionId(), 
+                split.index(), 
                 processedCustomers.size());
             
             return processedCustomers.iterator();

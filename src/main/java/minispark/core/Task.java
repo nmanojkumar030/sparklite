@@ -2,6 +2,13 @@ package minispark.core;
 
 import java.io.Serializable;
 
+/**
+ * Abstract base class for tasks that can be executed on workers.
+ * A task represents a unit of work that operates on a specific partition of an RDD.
+ *
+ * @param <I> The input type the task operates on
+ * @param <O> The output type the task produces
+ */
 public abstract class Task<I, O> implements Serializable {
     private final int taskId;
     private final int stageId;
@@ -13,7 +20,13 @@ public abstract class Task<I, O> implements Serializable {
         this.partitionId = partitionId;
     }
 
-    public abstract O execute(Partition<I> partition);
+    /**
+     * Execute the task on the given partition.
+     *
+     * @param partition The partition to execute on
+     * @return The result of the task execution
+     */
+    public abstract O execute(Partition partition);
 
     public int getTaskId() {
         return taskId;
