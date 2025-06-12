@@ -1,55 +1,58 @@
 package minispark.fileformat;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 
-import org.apache.parquet.hadoop.example.GroupReadSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.*;
 
-import org.apache.parquet.hadoop.util.HadoopInputFile;
 import org.apache.parquet.io.ColumnIOFactory;
 import org.apache.parquet.io.MessageColumnIO;
 import org.apache.parquet.io.RecordReader;
 import org.apache.parquet.example.data.simple.convert.GroupRecordConverter;
+import minispark.objectstore.Client;
 
 /**
- * Parquet format reader that creates partitions based on row groups.
- * This implementation is for local filesystem access only.
+ * Enhanced Parquet format reader that creates partitions based on row groups.
+ * Specialized for object store access with efficient range reads.
  * Each partition corresponds to one or more row groups in the Parquet file.
  */
-public class ParquetReader implements FormatReader<Group> {
-    private static final Logger logger = LoggerFactory.getLogger(ParquetReader.class);
+public class ObjectFileParquetReader implements FormatReader<Group> {
+    private static final Logger logger = LoggerFactory.getLogger(ObjectFileParquetReader.class);
     private final Configuration hadoopConf;
+    private final Client objectStoreClient;
     
     /**
-     * Create a ParquetReader for local filesystem access.
+     * Create an ObjectFileParquetReader with object store support for efficient range reads.
+     * This enables S3-style range requests for reading only the footer and specific row groups.
      */
-    public ParquetReader() {
-        this.hadoopConf = new Configuration();
-    }
-    
-    /**
-     * Create a ParquetReader for local filesystem access with custom Hadoop configuration.
-     */
-    public ParquetReader(Configuration hadoopConf) {
+    public ObjectFileParquetReader(Configuration hadoopConf, Client objectStoreClient) {
         this.hadoopConf = hadoopConf;
+        this.objectStoreClient = objectStoreClient;
+        if (objectStoreClient == null) {
+            throw new IllegalArgumentException("ObjectStoreClient cannot be null for ObjectFileParquetReader");
+        }
     }
     
     @Override
     public FilePartition[] createPartitions(String filePath, int targetPartitions) {
         try {
-            // Use traditional Hadoop filesystem
-            logger.info("Using Hadoop filesystem for: {}", filePath);
-            Path path = new Path(filePath);
-            ParquetMetadata parquetMetadata = ParquetFileReader.readFooter(hadoopConf, path);
+            // Use efficient range reads for object store
+            logger.info("Using object store range reads for footer metadata: {}", filePath);
+            ObjectStoreInputFile inputFile = new ObjectStoreInputFile(objectStoreClient, filePath);
+            
+            ParquetMetadata parquetMetadata;
+            // Use try-with-resources to read footer
+            try (ParquetFileReader fileReader = ParquetFileReader.open(inputFile)) {
+                parquetMetadata = fileReader.getFooter();
+                logger.info("Successfully read footer using range reads - file size: {} bytes", inputFile.getLength());
+            }
             
             List<BlockMetaData> rowGroups = parquetMetadata.getBlocks();
             logger.info("Parquet file {} has {} row groups, target partitions: {}", 
@@ -100,13 +103,14 @@ public class ParquetReader implements FormatReader<Group> {
                 partitionMetadata.put("rowGroupIndices", rowGroupIndices);
                 partitionMetadata.put("totalRows", totalRows);
                 partitionMetadata.put("schema", parquetMetadata.getFileMetaData().getSchema());
+                partitionMetadata.put("isObjectStore", true);
                 
                 long length = endOffset - startOffset;
                 partitions[partitionIndex] = new FilePartition(
                     partitionIndex, filePath, startOffset, length, partitionMetadata
                 );
                 
-                logger.debug("Created partition {} with {} row groups, {} rows, offset={}-{}", 
+                logger.debug("Created partition {} with {} row groups, {} rows, offset={}-{}, objectStore=true", 
                     partitionIndex, rowGroupsInThisPartition, totalRows, startOffset, endOffset);
             }
             
@@ -123,13 +127,13 @@ public class ParquetReader implements FormatReader<Group> {
             @SuppressWarnings("unchecked")
             List<Integer> rowGroupIndices = partition.getMetadata("rowGroupIndices");
             
-            logger.debug("Reading partition {} with row groups {}", 
+            logger.debug("Reading partition {} with row groups {} from object store", 
                 partition.index(), rowGroupIndices);
             
             List<Group> partitionData = new ArrayList<>();
             
-            // Use traditional Hadoop filesystem
-            readPartitionFromHadoop(filePath, rowGroupIndices, partitionData);
+            // Use efficient object store range reads
+            readPartitionFromObjectStore(filePath, rowGroupIndices, partitionData);
             
             logger.debug("Read {} total records for partition {}", partitionData.size(), partition.index());
             return partitionData.iterator();
@@ -139,24 +143,20 @@ public class ParquetReader implements FormatReader<Group> {
         }
     }
     
-
-    
-    private void readPartitionFromHadoop(String filePath, List<Integer> rowGroupIndices, List<Group> partitionData) throws IOException {
-        logger.debug("Reading from Hadoop filesystem: {}", filePath);
+    private void readPartitionFromObjectStore(String filePath, List<Integer> rowGroupIndices, List<Group> partitionData) throws IOException {
+        logger.debug("Reading from object store with range reads: {}", filePath);
         
-        Path path = new Path(filePath);
+        ObjectStoreInputFile inputFile = new ObjectStoreInputFile(objectStoreClient, filePath);
         
-        // OPTIMIZED: Read only specific row groups using ParquetFileReader
-        try (ParquetFileReader fileReader = ParquetFileReader.open(HadoopInputFile.fromPath(path, hadoopConf))) {
-            
+        try (ParquetFileReader fileReader = ParquetFileReader.open(inputFile)) {
             // Get the schema for creating groups
             org.apache.parquet.schema.MessageType schema = fileReader.getFooter().getFileMetaData().getSchema();
             
-            // Read only the row groups assigned to this partition
+            // Read only the row groups assigned to this partition using range reads
             for (Integer rowGroupIndex : rowGroupIndices) {
-                logger.debug("Reading row group {} for partition {}", rowGroupIndex, rowGroupIndices);
+                logger.debug("Reading row group {} using range reads for partition", rowGroupIndex);
                 
-                // Read specific row group
+                // Read specific row group - this will use range reads automatically
                 org.apache.parquet.hadoop.metadata.BlockMetaData blockMetaData = 
                     fileReader.getFooter().getBlocks().get(rowGroupIndex);
                 
@@ -179,7 +179,7 @@ public class ParquetReader implements FormatReader<Group> {
                     }
                 }
                 
-                logger.debug("Read {} records from row group {} for partition", 
+                logger.debug("Read {} records from row group {} using range reads", 
                     rowCount, rowGroupIndex);
             }
         }
@@ -187,12 +187,13 @@ public class ParquetReader implements FormatReader<Group> {
     
     @Override
     public List<String> getPreferredLocations(String filePath, FilePartition partition) {
-        // In a real implementation, you would extract block locations from HDFS
+        // For object store, you might return the regions or availability zones
+        // This is a simplified implementation
         return Collections.emptyList();
     }
     
     @Override
     public String getFormatName() {
-        return "parquet";
+        return "parquet-objectstore";
     }
 } 

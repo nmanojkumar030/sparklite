@@ -83,6 +83,60 @@ public class Client implements MessageBus.MessageHandler {
         });
     }
 
+    /**
+     * Retrieves a specific byte range from an object, similar to S3's range requests.
+     * This enables efficient reading of large files by fetching only needed portions.
+     * 
+     * @param key The object key
+     * @param startByte The starting byte position (inclusive, 0-based)
+     * @param endByte The ending byte position (inclusive), or -1 for end of file
+     * @return CompletableFuture containing the requested byte range
+     */
+    public CompletableFuture<byte[]> getObjectRange(String key, long startByte, long endByte) {
+        logger.debug("Sending GET_OBJECT_RANGE for key {} range {}-{}", key, startByte, endByte);
+        CompletableFuture<Object> future = new CompletableFuture<>();
+        String correlationId = UUID.randomUUID().toString();
+        pendingRequests.put(correlationId, future);
+        GetObjectRangeMessage message = new GetObjectRangeMessage(key, startByte, endByte, correlationId);
+        NetworkEndpoint targetServer = getTargetServer(key);
+        messageBus.send(message, clientEndpoint, targetServer);
+        return future.thenApply(response -> {
+            GetObjectRangeResponseMessage resp = (GetObjectRangeResponseMessage) response;
+            if (!resp.isSuccess()) {
+                throw new RuntimeException("Failed to retrieve object range: " + key + 
+                    " [" + startByte + "-" + endByte + "]");
+            }
+            logger.debug("GET_OBJECT_RANGE successful for key {} range {}-{}, returned {} bytes", 
+                key, startByte, endByte, resp.getData().length);
+            return resp.getData();
+        });
+    }
+
+    /**
+     * Gets the size of an object without downloading the content.
+     * Equivalent to HTTP HEAD request.
+     * 
+     * @param key The object key
+     * @return CompletableFuture containing the object size in bytes
+     */
+    public CompletableFuture<Long> getObjectSize(String key) {
+        logger.debug("Sending GET_OBJECT_SIZE for key {}", key);
+        CompletableFuture<Object> future = new CompletableFuture<>();
+        String correlationId = UUID.randomUUID().toString();
+        pendingRequests.put(correlationId, future);
+        GetObjectSizeMessage message = new GetObjectSizeMessage(key, correlationId);
+        NetworkEndpoint targetServer = getTargetServer(key);
+        messageBus.send(message, clientEndpoint, targetServer);
+        return future.thenApply(response -> {
+            GetObjectSizeResponseMessage resp = (GetObjectSizeResponseMessage) response;
+            if (!resp.isSuccess()) {
+                throw new RuntimeException("Failed to get object size: " + key);
+            }
+            logger.debug("GET_OBJECT_SIZE successful for key {}, size: {} bytes", key, resp.getSize());
+            return resp.getSize();
+        });
+    }
+
     public CompletableFuture<Void> deleteObject(String key) {
         logger.debug("Sending DELETE_OBJECT for key {}", key);
         CompletableFuture<Object> future = new CompletableFuture<>();

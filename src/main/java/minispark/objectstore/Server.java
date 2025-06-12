@@ -45,6 +45,12 @@ public class Server implements MessageBus.MessageHandler {
                 case GET_OBJECT:
                     handleGetObject((GetObjectMessage) message, sender);
                     break;
+                case GET_OBJECT_RANGE:
+                    handleGetObjectRange((GetObjectRangeMessage) message, sender);
+                    break;
+                case GET_OBJECT_SIZE:
+                    handleGetObjectSize((GetObjectSizeMessage) message, sender);
+                    break;
                 case DELETE_OBJECT:
                     handleDeleteObject((DeleteObjectMessage) message, sender);
                     break;
@@ -81,6 +87,43 @@ public class Server implements MessageBus.MessageHandler {
         GetObjectResponseMessage response = new GetObjectResponseMessage(message.getKey(), data, true, null, message.getCorrelationId());
         messageBus.send(response, endpoint, sender);
         logger.debug("Sent GET_OBJECT_RESPONSE for key {} to {}", message.getKey(), sender);
+    }
+
+    private void handleGetObjectRange(GetObjectRangeMessage message, NetworkEndpoint sender) throws IOException {
+        logger.debug("Handling GET_OBJECT_RANGE for key {} range {}-{}", 
+            message.getKey(), message.getStartByte(), message.getEndByte());
+        
+        try {
+            byte[] data = localStorage.getObjectRange(message.getKey(), message.getStartByte(), message.getEndByte());
+            GetObjectRangeResponseMessage response = new GetObjectRangeResponseMessage(
+                message.getKey(), data, message.getStartByte(), message.getEndByte(), message.getCorrelationId());
+            messageBus.send(response, endpoint, sender);
+            logger.debug("Sent GET_OBJECT_RANGE_RESPONSE for key {} range {}-{}, {} bytes to {}", 
+                message.getKey(), message.getStartByte(), message.getEndByte(), data.length, sender);
+        } catch (IOException e) {
+            GetObjectRangeResponseMessage response = new GetObjectRangeResponseMessage(
+                message.getKey(), e.getMessage(), message.getStartByte(), message.getEndByte(), message.getCorrelationId());
+            messageBus.send(response, endpoint, sender);
+            logger.error("Error handling GET_OBJECT_RANGE for key {}: {}", message.getKey(), e.getMessage());
+        }
+    }
+
+    private void handleGetObjectSize(GetObjectSizeMessage message, NetworkEndpoint sender) throws IOException {
+        logger.debug("Handling GET_OBJECT_SIZE for key {}", message.getKey());
+        
+        try {
+            long size = localStorage.getObjectSize(message.getKey());
+            GetObjectSizeResponseMessage response = new GetObjectSizeResponseMessage(
+                message.getKey(), size, message.getCorrelationId());
+            messageBus.send(response, endpoint, sender);
+            logger.debug("Sent GET_OBJECT_SIZE_RESPONSE for key {}, size: {} bytes to {}", 
+                message.getKey(), size, sender);
+        } catch (IOException e) {
+            GetObjectSizeResponseMessage response = new GetObjectSizeResponseMessage(
+                message.getKey(), e.getMessage(), message.getCorrelationId());
+            messageBus.send(response, endpoint, sender);
+            logger.error("Error handling GET_OBJECT_SIZE for key {}: {}", message.getKey(), e.getMessage());
+        }
     }
 
     private void handleDeleteObject(DeleteObjectMessage message, NetworkEndpoint sender) throws IOException {
@@ -133,6 +176,13 @@ public class Server implements MessageBus.MessageHandler {
             errorResponse = new PutObjectResponseMessage(((PutObjectMessage) originalMessage).getKey(), false, errorMessage, originalMessage.getCorrelationId());
         } else if (originalMessage instanceof GetObjectMessage) {
             errorResponse = new GetObjectResponseMessage(((GetObjectMessage) originalMessage).getKey(), null, false, errorMessage, originalMessage.getCorrelationId());
+        } else if (originalMessage instanceof GetObjectRangeMessage) {
+            GetObjectRangeMessage rangeMsg = (GetObjectRangeMessage) originalMessage;
+            errorResponse = new GetObjectRangeResponseMessage(rangeMsg.getKey(), errorMessage, 
+                rangeMsg.getStartByte(), rangeMsg.getEndByte(), originalMessage.getCorrelationId());
+        } else if (originalMessage instanceof GetObjectSizeMessage) {
+            errorResponse = new GetObjectSizeResponseMessage(((GetObjectSizeMessage) originalMessage).getKey(), 
+                errorMessage, originalMessage.getCorrelationId());
         } else if (originalMessage instanceof DeleteObjectMessage) {
             errorResponse = new DeleteObjectResponseMessage(((DeleteObjectMessage) originalMessage).getKey(), false, errorMessage, originalMessage.getCorrelationId());
         } else if (originalMessage instanceof ListObjectsMessage) {

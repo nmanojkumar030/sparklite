@@ -64,6 +64,75 @@ public class LocalStorageNode {
         return Files.readAllBytes(path);
     }
 
+    /**
+     * Retrieves a specific byte range from an object, implementing S3-style range reads.
+     * This is crucial for efficient Parquet footer reading and row group access.
+     * 
+     * @param key The object key
+     * @param startByte Starting byte position (inclusive, 0-based)
+     * @param endByte Ending byte position (inclusive), or -1 for end of file
+     * @return The requested byte range
+     * @throws IOException if the object doesn't exist or range is invalid
+     */
+    public byte[] getObjectRange(String key, long startByte, long endByte) throws IOException {
+        Path path = basePath.resolve(key);
+        if (!Files.exists(path)) {
+            throw new IOException("Failed to retrieve object: " + key);
+        }
+
+        long fileSize = Files.size(path);
+        
+        // Handle -1 as end of file
+        if (endByte == -1) {
+            endByte = fileSize - 1;
+        }
+
+        // Validate range
+        if (startByte < 0 || startByte >= fileSize) {
+            throw new IOException("Invalid start byte: " + startByte + " for file size: " + fileSize);
+        }
+        if (endByte < startByte || endByte >= fileSize) {
+            throw new IOException("Invalid end byte: " + endByte + " for file size: " + fileSize);
+        }
+
+        long rangeSize = endByte - startByte + 1;
+        if (rangeSize > Integer.MAX_VALUE) {
+            throw new IOException("Range too large: " + rangeSize + " bytes");
+        }
+
+        // Use RandomAccessFile for efficient range reading
+        try (RandomAccessFile raf = new RandomAccessFile(path.toFile(), "r")) {
+            byte[] buffer = new byte[(int) rangeSize];
+            raf.seek(startByte);
+            int bytesRead = raf.read(buffer);
+            
+            if (bytesRead != rangeSize) {
+                throw new IOException("Expected to read " + rangeSize + " bytes but read " + bytesRead);
+            }
+            
+            logger.debug("Read range {}-{} ({} bytes) from object {}", 
+                startByte, endByte, rangeSize, key);
+            
+            return buffer;
+        }
+    }
+
+    /**
+     * Gets the size of an object without reading its content.
+     * Equivalent to HTTP HEAD request for object metadata.
+     * 
+     * @param key The object key
+     * @return Size of the object in bytes
+     * @throws IOException if the object doesn't exist
+     */
+    public long getObjectSize(String key) throws IOException {
+        Path path = basePath.resolve(key);
+        if (!Files.exists(path)) {
+            throw new IOException("Failed to get size of object: " + key);
+        }
+        return Files.size(path);
+    }
+
     public void deleteObject(String key) throws IOException {
         Path path = basePath.resolve(key);
         Files.deleteIfExists(path);
