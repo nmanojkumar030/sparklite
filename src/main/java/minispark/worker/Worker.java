@@ -73,10 +73,40 @@ public class Worker implements MessageBus.MessageHandler {
                     
                     @SuppressWarnings("unchecked")
                     Task<Object, Object> typedTask = (Task<Object, Object>) task;
-                    Partition partition = new BasePartition(task.getPartitionId());
                     
-                    logger.debug("Worker {} created partition {} for task {}", 
-                        workerId, partition.index(), task.getTaskId());
+                    // Get the correct partition from the RDD instead of creating a BasePartition
+                    Partition partition;
+                    if (task instanceof minispark.core.RDDTask) {
+                        minispark.core.RDDTask<?> rddTask = (minispark.core.RDDTask<?>) task;
+                        try {
+                            // Use reflection to get the RDD from the task
+                            java.lang.reflect.Field rddField = minispark.core.RDDTask.class.getDeclaredField("rdd");
+                            rddField.setAccessible(true);
+                            minispark.core.MiniRDD<?> rdd = (minispark.core.MiniRDD<?>) rddField.get(rddTask);
+                            
+                            // Get the actual partition from the RDD
+                            Partition[] partitions = rdd.getPartitions();
+                            if (task.getPartitionId() < partitions.length) {
+                                partition = partitions[task.getPartitionId()];
+                                logger.debug("Worker {} using actual partition {} of type {}", 
+                                    workerId, partition.index(), partition.getClass().getSimpleName());
+                            } else {
+                                logger.warn("Worker {} partition index {} out of bounds, using BasePartition", 
+                                    workerId, task.getPartitionId());
+                                partition = new BasePartition(task.getPartitionId());
+                            }
+                        } catch (Exception e) {
+                            logger.warn("Worker {} failed to get RDD partition, using BasePartition: {}", 
+                                workerId, e.getMessage());
+                            partition = new BasePartition(task.getPartitionId());
+                        }
+                    } else {
+                        // For non-RDD tasks, use BasePartition
+                        partition = new BasePartition(task.getPartitionId());
+                    }
+                    
+                    logger.debug("Worker {} executing task {} with partition {} ({})", 
+                        workerId, task.getTaskId(), partition.index(), partition.getClass().getSimpleName());
                     
                     Object result = typedTask.execute(partition);
                     
