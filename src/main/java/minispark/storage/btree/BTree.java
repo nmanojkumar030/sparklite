@@ -131,8 +131,8 @@ public class BTree implements StorageInterface {
             if (pageManager.getFileSize() == 0) {
                 createRootPage();
             } else {
-                // File exists, try to read root page (page 0)
-                rootPageId = 0;
+                // File exists, load the root page ID from metadata
+                rootPageId = loadRootPageId();
                 Page rootPage = pageManager.readPage(rootPageId);
                 int flags = rootPage.flags();
                 if (flags == 0) {
@@ -148,20 +148,110 @@ public class BTree implements StorageInterface {
     }
     
     /**
+     * Loads the root page ID from the metadata stored in page 0.
+     * Page 0 is reserved for metadata and stores the actual root page ID.
+     */
+    private long loadRootPageId() throws IOException {
+        try {
+            Page metadataPage = pageManager.readPage(0);
+            
+            // Check if this is a metadata page or an old-style root page
+            if (metadataPage.count() == 0 || isMetadataPage(metadataPage)) {
+                // This is a metadata page, read the root page ID from it
+                return readRootPageIdFromMetadata(metadataPage);
+            } else {
+                // This is an old-style file where page 0 is the actual root
+                // For backward compatibility, return 0
+                return 0;
+            }
+        } catch (IOException e) {
+            // If we can't read metadata, assume page 0 is the root (backward compatibility)
+            return 0;
+        }
+    }
+    
+    /**
+     * Checks if a page is a metadata page by looking for a special marker.
+     */
+    private boolean isMetadataPage(Page page) {
+        // A metadata page has a special flag or marker
+        // For simplicity, we'll check if it has exactly one element with a special key
+        if (page.count() != 1) {
+            return false;
+        }
+        
+        try {
+            Element element = page.element(0);
+            byte[] key = element.key();
+            return Arrays.equals(key, "BTREE_ROOT_ID".getBytes());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    /**
+     * Reads the root page ID from the metadata page.
+     */
+    private long readRootPageIdFromMetadata(Page metadataPage) throws IOException {
+        if (metadataPage.count() == 0) {
+            // No metadata yet, assume root is page 1 (since page 0 is metadata)
+            return 1;
+        }
+        
+        try {
+            Element element = metadataPage.element(0);
+            if (Arrays.equals(element.key(), "BTREE_ROOT_ID".getBytes())) {
+                ByteBuffer buffer = ByteBuffer.wrap(element.value());
+                return buffer.getLong();
+            }
+        } catch (Exception e) {
+            // Fallback to page 1 if we can't read metadata
+        }
+        
+        return 1;
+    }
+    
+    /**
+     * Saves the root page ID to the metadata page (page 0).
+     */
+    private void saveRootPageId() throws IOException {
+        Page metadataPage = pageManager.readPage(0);
+        
+        // Clear existing metadata
+        metadataPage.setCount(0);
+        
+        // Store the root page ID
+        byte[] key = "BTREE_ROOT_ID".getBytes();
+        byte[] value = ByteBuffer.allocate(8).putLong(rootPageId).array();
+        
+        metadataPage.insert(key, value);
+        pageManager.writePage(metadataPage);
+    }
+    
+    /**
      * Creates a new root page as a leaf node
      */
     private void createRootPage() throws IOException {
-        // Allocate root page (should be page 0)
-        rootPageId = pageManager.allocatePage();
+        // First, allocate metadata page (page 0)
+        long metadataPageId = pageManager.allocatePage(); // Should be page 0
+        
+        // Then allocate the actual root page (page 1)
+        rootPageId = pageManager.allocatePage(); // Should be page 1
         Page rootPage = pageManager.readPage(rootPageId);
         rootPage.setFlags(Page.FLAG_LEAF); // Start with a leaf node as root
         pageManager.writePage(rootPage);
+        
+        // Save the root page ID to metadata
+        saveRootPageId();
     }
-    
+
+    //insert into customers (id, name, email, age, city) values (1, 'John Doe', 'gXo3H@example.com', 25, 'New York');
     @Override
     public void write(byte[] key, Map<String, Object> value) throws IOException {
         System.out.println("🔍 BTree.write() - Writing key: " + new String(key));
-        
+
+
+        //|keybytes|valuebytes|keybytes|valuebytes|keybytes|valuebytes|...
         // Serialize the value to bytes
         byte[] valueBytes = valueSerializer.serialize(value);
         
@@ -403,6 +493,9 @@ public class BTree implements StorageInterface {
         
         // Update root page ID
         rootPageId = newRootId;
+        
+        // Persist the new root page ID to metadata
+        saveRootPageId();
         
         System.out.println("   ✅ New root page created: " + newRootId);
     }

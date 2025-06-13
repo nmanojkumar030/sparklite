@@ -48,7 +48,7 @@ public class Table {
         // Convert to storage format
         byte[] key = record.getPrimaryKey().getBytes();
         Map<String, Object> value = record.getValues();
-        
+
         // Insert into primary storage
         storage.write(key, value);
         
@@ -79,7 +79,10 @@ public class Table {
         
         System.out.println("   ✅ Batch insert completed successfully");
     }
-    
+
+    public void createIndex(String indexName) throws IOException {
+        //TODO:
+    }
     /**
      * Finds a record by its primary key.
      *

@@ -79,12 +79,15 @@ public class DiskWritePerformanceTest {
         long numberOfWrites = 0;
         try (FileOutputStream os = new FileOutputStream(file)) {
             while (Instant.now().isBefore(endTime)) {
-                os.write(data);
+                //insert into customer ("1", "Name");
+                os.write(data);//No Guarantee that this data is written to hard disk.
+                //return success to user
                 os.flush();
+                //crash at this point.
                 
                 // EXPERIMENT: Uncomment the line below to force writes to physical storage
                 // This will show the difference between OS buffer writes vs actual disk writes
-                // syncToPhysicalMedia(os);
+                 syncToPhysicalMedia(os);
 
                 numberOfWrites++;
                 
@@ -101,7 +104,7 @@ public class DiskWritePerformanceTest {
     private static void syncToPhysicalMedia(FileOutputStream os) throws IOException {
         // Uncomment the line below to force synchronization to physical storage
         // This ensures data is written to disk, not just OS buffers
-        // os.getFD().sync(); // Why is this important for crash recovery?
+         os.getFD().sync(); // Why is this important for crash recovery?
     }
 
     private static void printMetrics(PerformanceMetrics metrics) {

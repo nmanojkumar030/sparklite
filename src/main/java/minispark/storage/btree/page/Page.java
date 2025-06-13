@@ -147,14 +147,98 @@ public class Page {
         int count = count();
         
         // Calculate actual used space by examining each element
+        // Use safe element access to avoid BufferUnderflowException
         for (int i = 0; i < count; i++) {
-            Element element = element(i);
-            usedSpace += ELEM_HEADER_SIZE + element.key().length + element.value().length;
+            try {
+                Element element = elementSafe(i);
+                if (element != null) {
+                    usedSpace += ELEM_HEADER_SIZE + element.key().length + element.value().length;
+                } else {
+                    // If we can't read an element safely, assume page is corrupted
+                    // Return minimal free space to prevent further insertions
+                    return 0;
+                }
+            } catch (Exception e) {
+                // If we encounter any error reading elements, assume page is full
+                return 0;
+            }
         }
         
         return pageSize - usedSpace;
     }
     
+    /**
+     * Gets an element at the given index with bounds checking.
+     *
+     * @param index The element index
+     * @return The element, or null if bounds are exceeded
+     */
+    public Element elementSafe(int index) {
+        if (index >= count() || index < 0) {
+            return null;
+        }
+        
+        try {
+            // Find the actual offset of this element
+            int offset = PAGE_HEADER_SIZE;
+            for (int i = 0; i < index; i++) {
+                // Validate we have enough space for element header
+                if (offset + ELEM_HEADER_SIZE > pageSize) {
+                    return null;
+                }
+                
+                int keyLength = buffer.getShort(offset);
+                int valueLength = buffer.getShort(offset + 2);
+                
+                // Validate lengths are reasonable (more lenient bounds)
+                if (keyLength < 0 || valueLength < 0 || 
+                    keyLength > pageSize - ELEM_HEADER_SIZE || valueLength > pageSize - ELEM_HEADER_SIZE) {
+                    return null;
+                }
+                
+                // Validate the complete element fits in the page
+                if (offset + ELEM_HEADER_SIZE + keyLength + valueLength > pageSize) {
+                    return null;
+                }
+                
+                offset += ELEM_HEADER_SIZE + keyLength + valueLength;
+            }
+            
+            // Validate we have enough space for the target element header
+            if (offset + ELEM_HEADER_SIZE > pageSize) {
+                return null;
+            }
+            
+            int keyLength = buffer.getShort(offset);
+            int valueLength = buffer.getShort(offset + 2);
+            
+            // Validate lengths are reasonable (more lenient bounds)
+            if (keyLength < 0 || valueLength < 0 || 
+                keyLength > pageSize - ELEM_HEADER_SIZE || valueLength > pageSize - ELEM_HEADER_SIZE) {
+                return null;
+            }
+            
+            // Validate the complete element fits in the page
+            if (offset + ELEM_HEADER_SIZE + keyLength + valueLength > pageSize) {
+                return null;
+            }
+            
+            boolean hasOverflow = (buffer.get(offset + 4) & 0x01) != 0;
+            
+            byte[] key = new byte[keyLength];
+            buffer.position(offset + 8);
+            buffer.get(key);
+            
+            byte[] value = new byte[valueLength];
+            buffer.get(value);
+            
+            return new Element(key, value, hasOverflow);
+        } catch (Exception e) {
+            // Any buffer operation failed - return null
+            return null;
+        }
+    }
+
     /**
      * Gets an element at the given index.
      *
@@ -166,26 +250,64 @@ public class Page {
             throw new IndexOutOfBoundsException("Element index " + index + " >= count " + count());
         }
         
-        // Find the actual offset of this element
-        int offset = PAGE_HEADER_SIZE;
-        for (int i = 0; i < index; i++) {
+        try {
+            // Find the actual offset of this element
+            int offset = PAGE_HEADER_SIZE;
+            for (int i = 0; i < index; i++) {
+                // Add bounds checking to prevent BufferUnderflowException
+                if (offset + ELEM_HEADER_SIZE > pageSize) {
+                    throw new IndexOutOfBoundsException("Element offset " + offset + " exceeds page size " + pageSize);
+                }
+                
+                int keyLength = buffer.getShort(offset);
+                int valueLength = buffer.getShort(offset + 2);
+                
+                // Validate element size is reasonable
+                if (keyLength < 0 || valueLength < 0) {
+                    throw new IndexOutOfBoundsException("Invalid element lengths: key=" + keyLength + ", value=" + valueLength);
+                }
+                
+                offset += ELEM_HEADER_SIZE + keyLength + valueLength;
+                
+                // Ensure we don't go beyond page bounds
+                if (offset > pageSize) {
+                    throw new IndexOutOfBoundsException("Element extends beyond page bounds");
+                }
+            }
+            
+            // Validate target element header fits
+            if (offset + ELEM_HEADER_SIZE > pageSize) {
+                throw new IndexOutOfBoundsException("Target element header exceeds page size");
+            }
+            
             int keyLength = buffer.getShort(offset);
             int valueLength = buffer.getShort(offset + 2);
-            offset += ELEM_HEADER_SIZE + keyLength + valueLength;
+            
+            // Validate target element lengths
+            if (keyLength < 0 || valueLength < 0) {
+                throw new IndexOutOfBoundsException("Invalid target element lengths: key=" + keyLength + ", value=" + valueLength);
+            }
+            
+            // Validate target element data fits
+            if (offset + ELEM_HEADER_SIZE + keyLength + valueLength > pageSize) {
+                throw new IndexOutOfBoundsException("Target element data exceeds page size");
+            }
+            
+            boolean hasOverflow = (buffer.get(offset + 4) & 0x01) != 0;
+            
+            byte[] key = new byte[keyLength];
+            buffer.position(offset + 8);
+            buffer.get(key);
+            
+            byte[] value = new byte[valueLength];
+            buffer.get(value);
+            
+            return new Element(key, value, hasOverflow);
+            
+        } catch (java.nio.BufferUnderflowException e) {
+            throw new IndexOutOfBoundsException("BufferUnderflowException reading element " + index + 
+                ": page data may be corrupted. Page size: " + pageSize + ", count: " + count());
         }
-        
-        int keyLength = buffer.getShort(offset);
-        int valueLength = buffer.getShort(offset + 2);
-        boolean hasOverflow = (buffer.get(offset + 4) & 0x01) != 0;
-        
-        byte[] key = new byte[keyLength];
-        buffer.position(offset + 8);
-        buffer.get(key);
-        
-        byte[] value = new byte[valueLength];
-        buffer.get(value);
-        
-        return new Element(key, value, hasOverflow);
     }
     
     /**
@@ -208,6 +330,11 @@ public class Page {
      * @return true if the insertion was successful
      */
     public boolean insert(byte[] key, byte[] value, boolean hasOverflow) {
+        // Validate input parameters
+        if (key == null || value == null) {
+            return false;
+        }
+        
         // Check if there's enough space
         int requiredSpace = ELEM_HEADER_SIZE + key.length + value.length;
         if (requiredSpace > freeSpace()) {
@@ -218,7 +345,12 @@ public class Page {
         int insertPos = 0;
         int count = count();
         for (int i = 0; i < count; i++) {
-            Element element = element(i);
+            Element element = elementSafe(i);
+            if (element == null) {
+                // Page appears corrupted, cannot safely insert
+                return false;
+            }
+            
             int cmp = Arrays.compare(key, element.key());
             if (cmp < 0) {
                 insertPos = i;
@@ -235,20 +367,37 @@ public class Page {
         // Calculate where to insert
         int insertOffset = PAGE_HEADER_SIZE;
         for (int i = 0; i < insertPos; i++) {
-            Element element = element(i);
+            Element element = elementSafe(i);
+            if (element == null) {
+                // Page appears corrupted, cannot safely insert
+                return false;
+            }
             insertOffset += ELEM_HEADER_SIZE + element.key().length + element.value().length;
+        }
+        
+        // Validate insertion offset is within bounds
+        if (insertOffset + requiredSpace > pageSize) {
+            return false;
         }
         
         // Shift existing elements if needed
         if (insertPos < count) {
             int shiftStart = insertOffset;
-            int shiftEnd = pageSize;
+            int shiftEnd = insertOffset;
             
             // Find the end of used space
             for (int i = insertPos; i < count; i++) {
-                Element element = element(i);
-                shiftEnd = insertOffset + ELEM_HEADER_SIZE + element.key().length + element.value().length;
-                insertOffset = shiftEnd;
+                Element element = elementSafe(i);
+                if (element == null) {
+                    // Page appears corrupted, cannot safely insert
+                    return false;
+                }
+                shiftEnd += ELEM_HEADER_SIZE + element.key().length + element.value().length;
+            }
+            
+            // Validate shift operation is safe
+            if (shiftEnd - shiftStart < 0 || shiftStart + requiredSpace + (shiftEnd - shiftStart) > pageSize) {
+                return false;
             }
             
             // Shift data
