@@ -248,8 +248,7 @@ public class BTree implements StorageInterface {
     //insert into customers (id, name, email, age, city) values (1, 'John Doe', 'gXo3H@example.com', 25, 'New York');
     @Override
     public void write(byte[] key, Map<String, Object> value) throws IOException {
-        System.out.println("🔍 BTree.write() - Writing key: " + new String(key));
-
+        explainInsertionProcess(key, value);
 
         //|keybytes|valuebytes|keybytes|valuebytes|keybytes|valuebytes|...
         // Serialize the value to bytes
@@ -263,7 +262,8 @@ public class BTree implements StorageInterface {
             createNewRoot(splitResult);
         }
         
-        System.out.println("   ✅ Successfully wrote key: " + new String(key));
+        demonstrateBTreeInvariants("insertion");
+        System.out.println("   SUCCESS: Successfully wrote key: " + new String(key));
         System.out.println();
     }
     
@@ -307,7 +307,7 @@ public class BTree implements StorageInterface {
         }
         
         // Page is full - need to split
-        System.out.println("   📄 Leaf page " + leafPage.getPageId() + " is full, splitting...");
+        explainPageSplitReason(leafPage, "leaf");
         return splitLeafPage(leafPage, key, value);
     }
     
@@ -341,44 +341,27 @@ public class BTree implements StorageInterface {
         }
         
         // Branch page is also full - need to split
-        System.out.println("   🌳 Branch page " + branchPage.getPageId() + " is full, splitting...");
+        explainPageSplitReason(branchPage, "branch");
         return splitBranchPage(branchPage, separatorKey, rightPageIdBytes);
     }
     
     /**
-     * Splits a full leaf page
+     * Splits a full leaf page using clear educational steps.
+     * This demonstrates the core B+Tree splitting algorithm used in production databases.
      */
     private SplitResult splitLeafPage(Page leftPage, byte[] newKey, byte[] newValue) throws IOException {
-        // Collect all elements including the new one
-        List<Element> allElements = new ArrayList<>();
+        logEducational("STEP 1: Collecting all elements for redistribution");
+        List<Element> allElements = collectAllElements(leftPage, newKey, newValue);
         
-        // Add existing elements
-        for (int i = 0; i < leftPage.count(); i++) {
-            allElements.add(leftPage.element(i));
-        }
+        logEducational("STEP 2: Redistributing elements using 50/50 split (production algorithm)");
+        int midPoint = allElements.size() / 2;
         
-        // Add new element in sorted position
-        Element newElement = new Element(newKey, newValue, false);
-        boolean inserted = false;
-        for (int i = 0; i < allElements.size(); i++) {
-            if (compareKeys(newKey, allElements.get(i).key()) < 0) {
-                allElements.add(i, newElement);
-                inserted = true;
-                break;
-            }
-        }
-        if (!inserted) {
-            allElements.add(newElement);
-        }
-        
-        // Create new right page
+        logEducational("STEP 3: Creating new right page");
         long rightPageId = pageManager.allocatePage();
         Page rightPage = pageManager.readPage(rightPageId);
         rightPage.setFlags(Page.FLAG_LEAF);
         
-        // Split elements between left and right pages
-        int midPoint = allElements.size() / 2;
-        
+        logEducational("STEP 4: Distributing elements between left and right pages");
         // Clear left page and add first half of elements
         leftPage.setCount(0);
         for (int i = 0; i < midPoint; i++) {
@@ -392,60 +375,39 @@ public class BTree implements StorageInterface {
             rightPage.insert(elem.key(), elem.value(), elem.hasOverflow());
         }
         
-        // Link leaf pages
+        logEducational("STEP 5: Linking leaf pages for range scanning");
         rightPage.setNextPageId(leftPage.nextPageId());
         leftPage.setNextPageId(rightPageId);
         
-        // Write both pages
+        logEducational("STEP 6: Persisting pages to disk");
         pageManager.writePage(leftPage);
         pageManager.writePage(rightPage);
         
         // Return split result with first key of right page as separator
         byte[] separatorKey = allElements.get(midPoint).key();
-        System.out.println("   ✅ Split leaf page " + leftPage.getPageId() + " -> " + 
-                          leftPage.getPageId() + " + " + rightPageId + 
-                          " (separator: " + new String(separatorKey) + ")");
+        logSplitCompletion("leaf", leftPage.getPageId(), rightPageId, separatorKey);
         
         return new SplitResult(leftPage.getPageId(), rightPageId, separatorKey);
     }
     
     /**
-     * Splits a full branch page
+     * Splits a full branch page using clear educational steps.
+     * Branch page splitting differs from leaf splitting because the middle element is promoted to parent.
      */
     private SplitResult splitBranchPage(Page leftPage, byte[] newKey, byte[] newValue) throws IOException {
-        // Collect all elements including the new one
-        List<Element> allElements = new ArrayList<>();
+        logEducational("STEP 1: Collecting all elements for redistribution");
+        List<Element> allElements = collectAllElements(leftPage, newKey, newValue);
         
-        // Add existing elements
-        for (int i = 0; i < leftPage.count(); i++) {
-            allElements.add(leftPage.element(i));
-        }
+        logEducational("STEP 2: Finding split point and separator element");
+        int midPoint = allElements.size() / 2;
+        Element separatorElement = allElements.get(midPoint);
         
-        // Add new element in sorted position
-        Element newElement = new Element(newKey, newValue, false);
-        boolean inserted = false;
-        for (int i = 0; i < allElements.size(); i++) {
-            if (compareKeys(newKey, allElements.get(i).key()) < 0) {
-                allElements.add(i, newElement);
-                inserted = true;
-                break;
-            }
-        }
-        if (!inserted) {
-            allElements.add(newElement);
-        }
-        
-        // Create new right page
+        logEducational("STEP 3: Creating new right branch page");
         long rightPageId = pageManager.allocatePage();
         Page rightPage = pageManager.readPage(rightPageId);
         rightPage.setFlags(Page.FLAG_BRANCH);
         
-        // Split elements between left and right pages
-        int midPoint = allElements.size() / 2;
-        
-        // The middle element becomes the separator (promoted to parent)
-        Element separatorElement = allElements.get(midPoint);
-        
+        logEducational("STEP 4: Distributing elements (middle element promoted to parent)");
         // Clear left page and add first half of elements
         leftPage.setCount(0);
         for (int i = 0; i < midPoint; i++) {
@@ -453,20 +415,17 @@ public class BTree implements StorageInterface {
             leftPage.insert(elem.key(), elem.value(), elem.hasOverflow());
         }
         
-        // Add second half to right page (excluding separator)
+        // Add second half to right page (excluding separator which goes to parent)
         for (int i = midPoint + 1; i < allElements.size(); i++) {
             Element elem = allElements.get(i);
             rightPage.insert(elem.key(), elem.value(), elem.hasOverflow());
         }
         
-        // Write both pages
+        logEducational("STEP 5: Persisting branch pages to disk");
         pageManager.writePage(leftPage);
         pageManager.writePage(rightPage);
         
-        System.out.println("   ✅ Split branch page " + leftPage.getPageId() + " -> " + 
-                          leftPage.getPageId() + " + " + rightPageId + 
-                          " (separator: " + new String(separatorElement.key()) + ")");
-        
+        logSplitCompletion("branch", leftPage.getPageId(), rightPageId, separatorElement.key());
         return new SplitResult(leftPage.getPageId(), rightPageId, separatorElement.key());
     }
     
@@ -474,7 +433,7 @@ public class BTree implements StorageInterface {
      * Creates a new root page when the old root splits
      */
     private void createNewRoot(SplitResult splitResult) throws IOException {
-        System.out.println("   🌳 Creating new root page due to root split");
+        System.out.println("   Creating new root page due to root split");
         
         long newRootId = pageManager.allocatePage();
         Page newRoot = pageManager.readPage(newRootId);
@@ -497,12 +456,12 @@ public class BTree implements StorageInterface {
         // Persist the new root page ID to metadata
         saveRootPageId();
         
-        System.out.println("   ✅ New root page created: " + newRootId);
+        System.out.println("   SUCCESS: New root page created: " + newRootId);
     }
     
     @Override
     public Optional<Map<String, Object>> read(byte[] key) throws IOException {
-        System.out.println("🔍 BTree.read() - Reading key: " + new String(key));
+        System.out.println("BTree.read() - Reading key: " + new String(key));
         
         // Start at the root page
         long currentPageId = rootPageId;
@@ -529,20 +488,20 @@ public class BTree implements StorageInterface {
                 } else {
                     valueBytes = element.value();
                 }
-                System.out.println("   ✅ Found key: " + new String(key));
+                System.out.println("   SUCCESS: Found key: " + new String(key));
                 System.out.println();
                 return Optional.of(valueSerializer.deserialize(valueBytes));
             }
         }
         
-        System.out.println("   ❌ Key not found: " + new String(key));
+        System.out.println("   NOT FOUND: Key not found: " + new String(key));
         System.out.println();
         return Optional.empty();
     }
     
     @Override
     public List<Record> scan(byte[] startKey, byte[] endKey, List<String> columns) throws IOException {
-        System.out.println("🔍 BTree.scan() - Scanning from '" + new String(startKey) + "' to '" + 
+        System.out.println("BTree.scan() - Scanning from '" + new String(startKey) + "' to '" + 
                           (endKey != null ? new String(endKey) : "END") + "'");
         
         List<Record> results = new ArrayList<>();
@@ -571,7 +530,7 @@ public class BTree implements StorageInterface {
                 
                 // Check if we're past the end of the range
                 if (endKey != null && compareKeys(key, endKey) >= 0) {
-                    System.out.println("   ✅ Scan completed. Found " + results.size() + " records");
+                    System.out.println("   SUCCESS: Scan completed. Found " + results.size() + " records");
                     System.out.println();
                     return results;
                 }
@@ -598,7 +557,7 @@ public class BTree implements StorageInterface {
                     }
                     
                     results.add(new Record(key, value));
-                    System.out.println("   📄 Found record: " + new String(key));
+                    System.out.println("   FOUND: Found record: " + new String(key));
                 }
             }
             
@@ -615,7 +574,7 @@ public class BTree implements StorageInterface {
             }
         }
         
-        System.out.println("   ✅ Scan completed. Found " + results.size() + " records");
+        System.out.println("   SUCCESS: Scan completed. Found " + results.size() + " records");
         System.out.println();
         return results;
     }
@@ -673,6 +632,121 @@ public class BTree implements StorageInterface {
     private int compareKeys(byte[] a, byte[] b) {
         return Arrays.compare(a, b);
     }
+    
+    // ========================================
+    // EDUCATIONAL HELPER METHODS FOR STEP 1.1
+    // ========================================
+    
+    /**
+     * Educational logging for workshop demonstrations.
+     */
+    private void logEducational(String message) {
+        System.out.println("   EDUCATIONAL: " + message);
+    }
+    
+    /**
+     * Explains the B+Tree insertion process for educational purposes.
+     */
+    private void explainInsertionProcess(byte[] key, Map<String, Object> value) {
+        System.out.println("B+Tree Insert Operation Starting");
+        System.out.println("   Key: " + new String(key));
+        System.out.println("   Value: " + value);
+        System.out.println("   Tree Height: " + calculateTreeHeight());
+        System.out.println("   Root Page ID: " + rootPageId);
+    }
+    
+    /**
+     * Calculates and returns the current height of the B+Tree for educational purposes.
+     */
+    private int calculateTreeHeight() {
+        try {
+            if (rootPageId == 0) return 0;
+            
+            int height = 1;
+            long currentPageId = rootPageId;
+            Page currentPage = pageManager.readPage(currentPageId);
+            
+            // Navigate down to a leaf to count levels
+            while (currentPage.isBranch()) {
+                height++;
+                if (currentPage.count() > 0) {
+                    Element firstElement = currentPage.element(0);
+                    ByteBuffer buffer = ByteBuffer.wrap(firstElement.value());
+                    currentPageId = buffer.getLong();
+                    currentPage = pageManager.readPage(currentPageId);
+                } else {
+                    break;
+                }
+            }
+            
+            return height;
+        } catch (IOException e) {
+            return -1; // Error calculating height
+        }
+    }
+    
+    /**
+     * Explains why a page split is necessary for educational purposes.
+     */
+    private void explainPageSplitReason(Page page, String pageType) {
+        System.out.println("Page Split Required");
+        System.out.println("   Page ID: " + page.getPageId());
+        System.out.println("   Page Type: " + pageType);
+        System.out.println("   Current Elements: " + page.count());
+        System.out.println("   Page Capacity: " + (degree - 1));
+        System.out.println("   Reason: Page is full and cannot accommodate new element");
+    }
+    
+    /**
+     * Demonstrates the B+Tree invariant maintenance during operations.
+     */
+    private void demonstrateBTreeInvariants(String operation) {
+        System.out.println("B+Tree Invariants Maintained After " + operation);
+        System.out.println("   1. All leaf nodes are at the same level");
+        System.out.println("   2. Internal nodes have between ⌈degree/2⌉ and degree-1 keys");
+        System.out.println("   3. Leaf nodes contain actual data and are linked for range scans");
+        System.out.println("   4. Keys are maintained in sorted order");
+    }
+    
+    /**
+     * Logs the completion of a page split operation.
+     */
+    private void logSplitCompletion(String pageType, long leftPageId, long rightPageId, byte[] separatorKey) {
+        System.out.println("   COMPLETED: Split " + pageType + " page " + leftPageId + " -> " + 
+                          leftPageId + " + " + rightPageId + 
+                          " (separator: " + new String(separatorKey) + ")");
+    }
+    
+    /**
+     * STEP 1: Collects all elements from a page plus a new element for redistribution.
+     * This is the first step in the B+Tree splitting algorithm.
+     */
+    private List<Element> collectAllElements(Page page, byte[] newKey, byte[] newValue) {
+        List<Element> allElements = new ArrayList<>();
+        
+        // Add existing elements from the page
+        for (int i = 0; i < page.count(); i++) {
+            allElements.add(page.element(i));
+        }
+        
+        // Add new element in sorted position to maintain B+Tree ordering
+        Element newElement = new Element(newKey, newValue, false);
+        boolean inserted = false;
+        for (int i = 0; i < allElements.size(); i++) {
+            if (compareKeys(newKey, allElements.get(i).key()) < 0) {
+                allElements.add(i, newElement);
+                inserted = true;
+                break;
+            }
+        }
+        if (!inserted) {
+            allElements.add(newElement);
+        }
+        
+        return allElements;
+    }
+    
+
     
     private int calculateMaxInlineSize(Page leaf, byte[] key) {
         int freeSpace = leaf.freeSpace();

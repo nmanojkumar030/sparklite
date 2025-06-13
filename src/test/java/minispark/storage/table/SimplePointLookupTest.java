@@ -172,7 +172,7 @@ public class SimplePointLookupTest {
     
     @Test
     void testLargeDatasetEfficiency() throws IOException {
-        System.out.println("\n🧪 Test: Large Dataset Efficiency (100 records)");
+        System.out.println("\n Test: Large Dataset Efficiency (100 records)");
         System.out.println("=" .repeat(50));
         
         btree.resetPageAccessCounters();
