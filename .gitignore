@@ -32,5 +32,10 @@ gradle-app.setting
 # Test data
 test_table/
 
+# Generated database and parquet files from demos
+*.db
+*.parquet
+.*.crc
+
 # OS
 .DS_Store 
