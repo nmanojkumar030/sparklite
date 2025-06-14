@@ -1,0 +1,78 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+    "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+    "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="warning"/>
+    <property name="fileExtensions" value="java"/>
+
+    <!-- File Length: Threshold 500 lines -->
+    <module name="FileLength">
+        <property name="max" value="500"/>
+        <property name="severity" value="error"/>
+    </module>
+
+    <module name="TreeWalker">
+        <!-- Class Fan-Out Complexity: Threshold 30 -->
+        <module name="ClassFanOutComplexity">
+            <property name="max" value="30"/>
+            <property name="severity" value="error"/>
+        </module>
+
+        <!-- Class Data Abstraction Coupling: Threshold 10 -->
+        <module name="ClassDataAbstractionCoupling">
+            <property name="max" value="10"/>
+            <property name="severity" value="error"/>
+        </module>
+
+        <!-- Cyclomatic Complexity: Threshold 10 -->
+        <module name="CyclomaticComplexity">
+            <property name="max" value="10"/>
+            <property name="severity" value="error"/>
+        </module>
+
+        <!-- Method Length: Threshold 30 lines -->
+        <module name="MethodLength">
+            <property name="max" value="30"/>
+            <property name="severity" value="error"/>
+        </module>
+
+        <!-- Parameter Number: Threshold 6 parameters -->
+        <module name="ParameterNumber">
+            <property name="max" value="6"/>
+            <property name="severity" value="error"/>
+        </module>
+
+        <!-- Boolean Expression Complexity: Threshold 3 -->
+        <module name="BooleanExpressionComplexity">
+            <property name="max" value="3"/>
+            <property name="severity" value="error"/>
+        </module>
+
+        <!-- Nested If Depth: Threshold 3 -->
+        <module name="NestedIfDepth">
+            <property name="max" value="3"/>
+            <property name="severity" value="error"/>
+        </module>
+
+        <!-- Nested Try Depth: Threshold 2 -->
+        <module name="NestedTryDepth">
+            <property name="max" value="2"/>
+            <property name="severity" value="error"/>
+        </module>
+
+        <!-- Anonymous Inner Length: Threshold 20 lines -->
+        <module name="AnonInnerLength">
+            <property name="max" value="20"/>
+            <property name="severity" value="error"/>
+        </module>
+
+        <!-- Executable Statement Count: Threshold 30 -->
+        <module name="ExecutableStatementCount">
+            <property name="max" value="30"/>
+            <property name="severity" value="error"/>
+        </module>
+    </module>
+</module> 

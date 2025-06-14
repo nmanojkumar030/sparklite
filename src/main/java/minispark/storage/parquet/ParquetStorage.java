@@ -4,6 +4,22 @@ import minispark.storage.Record;
 import minispark.storage.StorageInterface;
 import minispark.storage.table.TableSchema;
 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.parquet.example.data.Group;
+import org.apache.parquet.example.data.simple.SimpleGroup;
+import org.apache.parquet.hadoop.ParquetWriter;
+import org.apache.parquet.hadoop.example.GroupWriteSupport;
+import org.apache.parquet.hadoop.metadata.CompressionCodecName;
+import org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.parquet.hadoop.util.HadoopInputFile;
+import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.column.ParquetProperties;
+import org.apache.parquet.io.ColumnIOFactory;
+import org.apache.parquet.io.MessageColumnIO;
+import org.apache.parquet.io.RecordReader;
+import org.apache.parquet.example.data.simple.convert.GroupRecordConverter;
+
 import java.io.IOException;
 import java.util.*;
 
@@ -19,6 +35,12 @@ import java.util.*;
  * - Single Responsibility: Focus on Parquet storage operations
  * - Composition: Delegate to specialized managers
  * - Clean Interface: Implement StorageInterface contract
+ * 
+ * Refactored to reduce toxicity:
+ * - Extracted educational logging to ParquetEducationalLogger
+ * - Delegated complex operations to ParquetOperations
+ * - Reduced method lengths and parameter counts
+ * - Decreased class coupling
  */
 public class ParquetStorage implements StorageInterface {
     
@@ -26,7 +48,7 @@ public class ParquetStorage implements StorageInterface {
     private final TableSchema schema;
     private final ParquetBufferManager bufferManager;
     private final ParquetFileManager fileManager;
-    private final ParquetRecordConverter recordConverter;
+    private final ParquetOperations operations;
     
     /**
      * Creates a new Parquet storage engine.
@@ -39,14 +61,14 @@ public class ParquetStorage implements StorageInterface {
         this.schema = schema;
         this.bufferManager = new ParquetBufferManager();
         this.fileManager = new ParquetFileManager(basePath);
-        this.recordConverter = new ParquetRecordConverter(schema);
+        this.operations = new ParquetOperations(schema);
         
-        logStorageCreation();
+        ParquetEducationalLogger.logStorageCreation();
     }
     
     @Override
     public void write(byte[] key, Map<String, Object> value) throws IOException {
-        logSingleWrite(key);
+        ParquetEducationalLogger.logSingleWrite(key);
         
         Record record = new Record(key, value);
         bufferManager.addRecord(record);
@@ -59,7 +81,7 @@ public class ParquetStorage implements StorageInterface {
     @Override
     public void writeBatch(List<Record> records) throws IOException {
         validateRecords(records);
-        logBatchWrite(records.size());
+        ParquetEducationalLogger.logBatchWrite(records.size());
         
         String filename = fileManager.getNextFileName();
         writeRecordsToParquet(records, filename);
@@ -67,14 +89,14 @@ public class ParquetStorage implements StorageInterface {
     
     @Override
     public Optional<Map<String, Object>> read(byte[] key) throws IOException {
-        logPointLookup(key);
+        ParquetEducationalLogger.logPointLookup(key);
         
         // EDUCATIONAL: Point lookups in columnar format
         // This demonstrates the trade-off: excellent for scans, slower for point lookups
         List<String> parquetFiles = fileManager.getAllParquetFiles();
         
         for (String filename : parquetFiles) {
-            Optional<Map<String, Object>> result = searchInFile(filename, key);
+            Optional<Map<String, Object>> result = operations.searchInFile(filename, key);
             if (result.isPresent()) {
                 return result;
             }
@@ -85,13 +107,13 @@ public class ParquetStorage implements StorageInterface {
     
     @Override
     public List<Record> scan(byte[] startKey, byte[] endKey, List<String> columns) throws IOException {
-        logRangeScan(startKey, endKey, columns);
+        ParquetEducationalLogger.logRangeScan(startKey, endKey, columns);
         
         List<Record> results = new ArrayList<>();
         List<String> parquetFiles = fileManager.getAllParquetFiles();
         
         for (String filename : parquetFiles) {
-            List<Record> fileResults = scanFile(filename, startKey, endKey, columns);
+            List<Record> fileResults = operations.scanFile(filename, startKey, endKey, columns);
             results.addAll(fileResults);
         }
         
@@ -100,7 +122,7 @@ public class ParquetStorage implements StorageInterface {
     
     @Override
     public void delete(byte[] key) throws IOException {
-        logDelete(key);
+        ParquetEducationalLogger.logDelete(key);
         
         // EDUCATIONAL: Immutable files require versioning for deletes
         // This demonstrates how columnar formats handle updates
@@ -109,7 +131,7 @@ public class ParquetStorage implements StorageInterface {
     
     @Override
     public void close() throws IOException {
-        logStorageClose();
+        ParquetEducationalLogger.logStorageClose();
         
         if (bufferManager.hasBufferedRecords()) {
             flushBuffer();
@@ -128,21 +150,36 @@ public class ParquetStorage implements StorageInterface {
     }
     
     private void writeRecordsToParquet(List<Record> records, String filename) throws IOException {
-        // TODO: Implement actual Parquet writing
-        // For now, this is a placeholder that will be implemented in next steps
-        System.out.println("   📝 Writing " + records.size() + " records to: " + filename);
+        ParquetEducationalLogger.logParquetWriteStart(records.size(), filename);
+        
+        try {
+            performParquetWrite(records, filename);
+            ParquetEducationalLogger.logParquetWriteComplete(records.size(), filename);
+        } catch (IOException e) {
+            ParquetEducationalLogger.logParquetWriteError(filename, e);
+            throw new IOException("Failed to write Parquet file: " + filename, e);
+        }
     }
     
-    private Optional<Map<String, Object>> searchInFile(String filename, byte[] key) throws IOException {
-        // TODO: Implement Parquet file search
-        // This will use ParquetReader to scan for specific key
-        return Optional.empty();
-    }
-    
-    private List<Record> scanFile(String filename, byte[] startKey, byte[] endKey, List<String> columns) throws IOException {
-        // TODO: Implement Parquet file scanning
-        // This will use ParquetReader with column projection
-        return new ArrayList<>();
+    private void performParquetWrite(List<Record> records, String filename) throws IOException {
+        // Create Parquet schema from TableSchema
+        MessageType parquetSchema = ParquetSchemaConverter.convertToParquetSchema(schema);
+        
+        // Setup Hadoop configuration and path
+        Configuration conf = new Configuration();
+        GroupWriteSupport.setSchema(parquetSchema, conf);
+        Path parquetPath = new Path(filename);
+        
+        // Create ParquetWriter with industry-standard settings
+        try (ParquetWriter<Group> writer = operations.createParquetWriter(
+                parquetPath, conf, parquetSchema, bufferManager.getStats().getMaxSizeBytes())) {
+            
+            // Convert and write each record
+            for (Record record : records) {
+                Group group = operations.convertRecordToGroup(record, parquetSchema);
+                writer.write(group);
+            }
+        }
     }
     
     private List<Record> sortResults(List<Record> results) {
@@ -154,52 +191,5 @@ public class ParquetStorage implements StorageInterface {
         if (records == null || records.isEmpty()) {
             throw new IllegalArgumentException("Records cannot be null or empty");
         }
-    }
-    
-    // Educational logging methods (clear, descriptive output for workshops)
-    
-    private void logStorageCreation() {
-        System.out.println("🏗️ EDUCATIONAL: Creating ParquetStorage");
-        System.out.println("   📁 Base path: " + basePath);
-        System.out.println("   📋 Schema primary key: " + schema.getPrimaryKeyColumn());
-        System.out.println("   🎯 Optimized for: Analytical workloads (OLAP)");
-    }
-    
-    private void logSingleWrite(byte[] key) {
-        System.out.println("📝 EDUCATIONAL: ParquetStorage.write()");
-        System.out.println("   🔑 Key: " + new String(key));
-        System.out.println("   💾 Strategy: Buffer until row group threshold");
-    }
-    
-    private void logBatchWrite(int recordCount) {
-        System.out.println("📝 EDUCATIONAL: ParquetStorage.writeBatch()");
-        System.out.println("   📊 Records: " + recordCount);
-        System.out.println("   🚀 Strategy: Direct write to Parquet file");
-    }
-    
-    private void logPointLookup(byte[] key) {
-        System.out.println("🔍 EDUCATIONAL: ParquetStorage.read()");
-        System.out.println("   🔑 Key: " + new String(key));
-        System.out.println("   ⚠️ Trade-off: Slower than B+Tree for point lookups");
-    }
-    
-    private void logRangeScan(byte[] startKey, byte[] endKey, List<String> columns) {
-        System.out.println("🔍 EDUCATIONAL: ParquetStorage.scan()");
-        System.out.println("   📊 Range: [" + new String(startKey) + ", " + 
-                          (endKey != null ? new String(endKey) : "END") + "]");
-        System.out.println("   🎯 Columns: " + (columns != null ? columns : "ALL"));
-        System.out.println("   ✅ Strength: Excellent for analytical scans");
-    }
-    
-    private void logDelete(byte[] key) {
-        System.out.println("🗑️ EDUCATIONAL: ParquetStorage.delete()");
-        System.out.println("   🔑 Key: " + new String(key));
-        System.out.println("   📝 Strategy: Mark as deleted (immutable files)");
-    }
-    
-    private void logStorageClose() {
-        System.out.println("🔒 EDUCATIONAL: Closing ParquetStorage");
-        System.out.println("   💾 Flushing any buffered records");
-        System.out.println("   🧹 Cleaning up resources");
     }
 } 

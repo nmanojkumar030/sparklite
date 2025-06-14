@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'checkstyle'
 }
 
 group = 'org.example'
@@ -38,4 +39,126 @@ dependencies {
 
 test {
     useJUnitPlatform()
+}
+
+// Checkstyle configuration for toxicity analysis
+checkstyle {
+    toolVersion = '10.12.4'
+    configFile = file('toxicity-metrics.xml')
+    ignoreFailures = false  // FAIL build when toxicity thresholds exceeded
+    showViolations = true
+    maxWarnings = 0
+    maxErrors = 0  // No toxicity violations allowed
+}
+
+// Custom task for toxicity analysis
+task toxicityAnalysis(type: Checkstyle) {
+    description = 'Runs toxicity analysis on Parquet implementation using Erik Dörnenburg\'s methodology'
+    group = 'verification'
+    
+    source 'src/main/java/minispark/storage/parquet'
+    include '**/*.java'
+    classpath = files()
+    
+    configFile = file('toxicity-metrics.xml')
+    ignoreFailures = false  // FAIL build when toxicity thresholds exceeded
+    showViolations = true
+    
+    reports {
+        xml.required = true
+        html.required = true
+        xml.outputLocation = file("$buildDir/reports/toxicity/toxicity.xml")
+        html.outputLocation = file("$buildDir/reports/toxicity/toxicity.html")
+    }
+    
+    doFirst {
+        println "\n🧪 TOXICITY ANALYSIS STARTING"
+        println "=" * 50
+        println "🎯 Enforcing Erik Dörnenburg's toxicity thresholds:"
+        println "   File Length: ≤ 500 lines"
+        println "   Method Length: ≤ 30 lines"
+        println "   Cyclomatic Complexity: ≤ 10"
+        println "   Parameter Count: ≤ 6"
+        println "   Class Fan-Out: ≤ 30"
+        println "   Class Data Abstraction Coupling: ≤ 10"
+        println "\n⚠️  BUILD WILL FAIL if any thresholds are exceeded!"
+        println "📚 Methodology: https://erik.doernenburg.com/2008/11/how-toxic-is-your-code/"
+    }
+    
+    doLast {
+        println "\n✅ TOXICITY ANALYSIS PASSED"
+        println "=" * 50
+        println "🎉 All code meets quality thresholds!"
+        println "📊 Reports generated:"
+        println "   XML:  $buildDir/reports/toxicity/toxicity.xml"
+        println "   HTML: $buildDir/reports/toxicity/toxicity.html"
+    }
+}
+
+// Task to show toxicity summary (allows failures for reporting)
+task toxicitySummary(type: Checkstyle) {
+    description = 'Shows a summary of toxicity analysis results without failing build'
+    group = 'verification'
+    
+    source 'src/main/java/minispark/storage/parquet'
+    include '**/*.java'
+    classpath = files()
+    
+    configFile = file('toxicity-metrics.xml')
+    ignoreFailures = true  // Don't fail build for summary
+    showViolations = true
+    
+    reports {
+        xml.required = true
+        html.required = true
+        xml.outputLocation = file("$buildDir/reports/toxicity-summary/toxicity.xml")
+        html.outputLocation = file("$buildDir/reports/toxicity-summary/toxicity.html")
+    }
+    
+    doLast {
+        def reportFile = file("$buildDir/reports/toxicity-summary/toxicity.xml")
+        if (reportFile.exists()) {
+            def violations = new XmlSlurper().parse(reportFile)
+            def fileViolations = [:]
+            
+            violations.file.each { file ->
+                def fileName = file.@name.toString().split('/').last()
+                def errorCount = file.error.size()
+                if (errorCount > 0) {
+                    fileViolations[fileName] = errorCount
+                }
+            }
+            
+            println "\n📊 TOXICITY SUMMARY"
+            println "=" * 50
+            if (fileViolations.isEmpty()) {
+                println "✅ No toxicity issues found! Code quality is excellent."
+            } else {
+                println "⚠️  Toxicity issues found:"
+                fileViolations.each { fileName, count ->
+                    println "   ${fileName}: ${count} violations"
+                }
+                println "\n💡 View detailed report: build/reports/toxicity-summary/toxicity.html"
+                println "\n🚨 To enforce quality gates, run: ./gradlew toxicityAnalysis"
+            }
+        }
+    }
+}
+
+// Integrate toxicity checking into build lifecycle
+check.dependsOn toxicityAnalysis
+
+// Task to check code quality before committing
+task qualityGate {
+    description = 'Runs all quality checks including toxicity analysis'
+    group = 'verification'
+    dependsOn test, toxicityAnalysis
+    
+    doLast {
+        println "\n🎉 QUALITY GATE PASSED!"
+        println "=" * 50
+        println "✅ All tests passed"
+        println "✅ All toxicity thresholds met"
+        println "🚀 Code is ready for commit/deployment!"
+    }
 }

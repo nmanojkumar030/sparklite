@@ -164,10 +164,14 @@ public class ParquetTableIntegrationTest {
         System.out.println("   Strategy: Scan files (slower than B+Tree)");
         System.out.println("   Trade-off: Excellent for scans, acceptable for lookups");
         
-        // For now, this returns empty since we haven't implemented actual Parquet I/O
-        // But the interface works correctly
-        assertFalse(customer.isPresent());
-        System.out.println("✅ Point lookup interface works (no data found as expected)");
+        // Parquet I/O is now fully implemented and working!
+        assertTrue(customer.isPresent());
+        if (customer.isPresent()) {
+            System.out.println("✅ Found customer: " + customer.get().getPrimaryKey());
+            assertEquals("CUST001", customer.get().getPrimaryKey());
+            assertEquals("Alice Johnson", customer.get().getValue("name"));
+        }
+        System.out.println("✅ Point lookup working with actual Parquet I/O!");
     }
     
     /**
