@@ -71,6 +71,20 @@ public class ParquetMetadata {
     }
     
     /**
+     * Get the underlying Parquet metadata for advanced operations
+     */
+    public org.apache.parquet.hadoop.metadata.ParquetMetadata getMetadata() {
+        return metadata;
+    }
+    
+    /**
+     * Get the number of columns in the schema
+     */
+    public int getColumnCount() {
+        return metadata.getFileMetaData().getSchema().getFieldCount();
+    }
+    
+    /**
      * Extract row group statistics from the metadata
      * 
      * Learning note: This shows how statistics are embedded in the Parquet footer

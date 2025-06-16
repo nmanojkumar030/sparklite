@@ -2,51 +2,53 @@ package minispark.storage.parquet.assignment;
 
 import minispark.storage.Record;
 import minispark.storage.table.TableSchema;
+import minispark.storage.parquet.ParquetOperations;
 import minispark.storage.parquet.ParquetSchemaConverter;
-import minispark.storage.parquet.ParquetEducationalLogger;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.example.data.Group;
-import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.example.GroupWriteSupport;
-import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.schema.MessageType;
-import org.apache.parquet.column.ParquetProperties;
 
 import java.io.IOException;
 import java.util.*;
 
 /**
- * Utility class that generates sample Parquet files with structured row groups.
+ * Utility that generates sample Parquet files with structured row groups.
  * 
  * Creates customer data with age-based distribution across row groups
  * to demonstrate metadata-driven query optimization patterns.
+ * 
+ * This class reuses the production ParquetOperations for writing logic,
+ * but configures small row group sizes for educational purposes.
  */
 public class ParquetFileWriter {
     
-    // Row group size configuration - small enough to ensure 3 separate row groups
-    private static final int ROW_GROUP_SIZE = 8 * 1024; // 8KB - small for educational purposes
+    // Very small row group size for educational purposes (forces multiple row groups)
+    private static final int ROW_GROUP_SIZE = 2 * 1024; // 2KB
     
     /**
      * Creates a sample customers.parquet file with educational structure.
      * 
      * Structure:
-     * - Row Group 1: Young customers (ages 20-35) - 100 records
-     * - Row Group 2: Middle-aged customers (ages 40-65) - 100 records  
-     * - Row Group 3: Mixed ages (ages 25-45) - 100 records
+     * - Row Group 1: Young customers (ages 20-30) - 100 records
+     * - Row Group 2: Middle-aged customers (ages 40-50) - 100 records  
+     * - Row Group 3: Senior customers (ages 60-70) - 100 records
      * 
      * This distribution enables meaningful predicate pushdown demonstrations.
+     * For example, filter "age > 35" should skip Row Group 1 entirely.
      * 
      * @param filePath Path where to create the Parquet file
      * @throws IOException if file creation fails
      */
     public static void createCustomersFile(String filePath) throws IOException {
         logFileCreationStart();
-        
-        // Define schema (reusing existing TableSchema)
+
+        // Reuse existing schema and operations
         TableSchema schema = TableSchema.createCustomerSchema();
+        ParquetOperations operations = new ParquetOperations(schema);
         MessageType parquetSchema = ParquetSchemaConverter.convertToParquetSchema(schema);
         
         // Setup Hadoop configuration
@@ -54,9 +56,14 @@ public class ParquetFileWriter {
         GroupWriteSupport.setSchema(parquetSchema, conf);
         Path parquetPath = new Path(filePath);
         
-        // Create single ParquetWriter for the entire file
-        try (ParquetWriter<Group> writer = createParquetWriter(parquetPath, conf, parquetSchema)) {
-            writeAllRowGroups(writer, parquetSchema);
+        // Use ParquetOperations to create writer with educational row group size
+        // The writer will automatically create row groups when size threshold is reached
+        // (in this case, 8KB), resulting in multiple row groups.
+        //The close method will automatically flush and close the writer.
+        //When the writer is closed, the Parquet file will be created.
+        try (ParquetWriter<Group> writer = operations.createParquetWriter(
+                parquetPath, conf, parquetSchema, ROW_GROUP_SIZE)) {
+            writeAllRowGroups(writer, operations, parquetSchema);
         }
         
         displayFileStatistics(filePath);
@@ -64,80 +71,37 @@ public class ParquetFileWriter {
     }
     
     /**
-     * Creates a ParquetWriter with settings optimized for educational row group demonstration
-     */
-    private static ParquetWriter<Group> createParquetWriter(Path path, Configuration conf, MessageType schema) throws IOException {
-        return new ParquetWriter<Group>(
-            path,
-            new GroupWriteSupport(),
-            CompressionCodecName.SNAPPY,
-            ROW_GROUP_SIZE,  // Small row group size to ensure 3 separate row groups
-            1024,            // Page size
-            512,             // Dictionary page size
-            ParquetWriter.DEFAULT_IS_DICTIONARY_ENABLED,
-            ParquetWriter.DEFAULT_IS_VALIDATING_ENABLED,
-            ParquetProperties.WriterVersion.PARQUET_1_0,
-            conf
-        );
-    }
-    
-    /**
      * Writes all customer data to the ParquetWriter, letting it create row groups automatically
      */
-    private static void writeAllRowGroups(ParquetWriter<Group> writer, MessageType schema) throws IOException {
-        // Generate all customer data
+    private static void writeAllRowGroups(ParquetWriter<Group> writer, ParquetOperations operations, MessageType schema) throws IOException {
+        // Generate all customer data with distinct age ranges
         List<Record> youngCustomers = generateYoungCustomers(100);
         List<Record> middleAgedCustomers = generateMiddleAgedCustomers(100);
-        List<Record> mixedAgeCustomers = generateMixedAgeCustomers(100);
+        List<Record> seniorCustomers = generateSeniorCustomers(100);
         
-        // Write Row Group 1: Young customers
-        logRowGroupCreation(1, "Young customers", 20, 35, youngCustomers.size());
-        writeRecordsToWriter(writer, youngCustomers, schema);
+        // Write Row Group 1: Young customers (ages 20-30)
+        logRowGroupCreation(1, "Young customers", 20, 30, youngCustomers.size());
+        writeRecordsToWriter(writer, operations, youngCustomers, schema);
         
-        // Write Row Group 2: Middle-aged customers  
-        logRowGroupCreation(2, "Middle-aged customers", 40, 65, middleAgedCustomers.size());
-        writeRecordsToWriter(writer, middleAgedCustomers, schema);
+        // Write Row Group 2: Middle-aged customers (ages 40-50)
+        logRowGroupCreation(2, "Middle-aged customers", 40, 50, middleAgedCustomers.size());
+        writeRecordsToWriter(writer, operations, middleAgedCustomers, schema);
         
-        // Write Row Group 3: Mixed age customers
-        logRowGroupCreation(3, "Mixed age customers", 25, 45, mixedAgeCustomers.size());
-        writeRecordsToWriter(writer, mixedAgeCustomers, schema);
+        // Write Row Group 3: Senior customers (ages 60-70)
+        logRowGroupCreation(3, "Senior customers", 60, 70, seniorCustomers.size());
+        writeRecordsToWriter(writer, operations, seniorCustomers, schema);
     }
     
     /**
-     * Writes a batch of records to the ParquetWriter
+     * Writes a batch of records to the ParquetWriter using shared operations
      */
-    private static void writeRecordsToWriter(ParquetWriter<Group> writer, List<Record> records, MessageType schema) throws IOException {
+    private static void writeRecordsToWriter(ParquetWriter<Group> writer, ParquetOperations operations, 
+                                           List<Record> records, MessageType schema) throws IOException {
         for (Record record : records) {
-            Group group = convertRecordToGroup(record, schema);
+            // Reuse the production record-to-group conversion logic
+            Group group = operations.convertRecordToGroup(record, schema);
             writer.write(group);
         }
-    }
-    
-    /**
-     * Converts a Record to a Parquet Group
-     */
-    private static Group convertRecordToGroup(Record record, MessageType schema) {
-        SimpleGroup group = new SimpleGroup(schema);
-        Map<String, Object> values = record.getValue();
-        
-        // Add each field to the group based on schema field types
-        for (org.apache.parquet.schema.Type field : schema.getFields()) {
-            String fieldName = field.getName();
-            Object value = values.get(fieldName);
-            
-            if (value != null) {
-                // Convert based on Parquet field type
-                if (field.asPrimitiveType().getPrimitiveTypeName() == org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.INT32) {
-                    group.add(fieldName, (Integer) value);
-                } else if (field.asPrimitiveType().getPrimitiveTypeName() == org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.BINARY) {
-                    group.add(fieldName, value.toString());
-                } else {
-                    group.add(fieldName, value.toString());
-                }
-            }
-        }
-        
-        return group;
     }
     
     private static void logFileCreationStart() {
@@ -149,7 +113,7 @@ public class ParquetFileWriter {
     }
     
     /**
-     * Generates young customers (ages 20-35) for Row Group 1
+     * Generates young customers (ages 20-30) for Row Group 1
      */
     private static List<Record> generateYoungCustomers(int count) {
         List<Record> customers = new ArrayList<>();
@@ -161,7 +125,7 @@ public class ParquetFileWriter {
             customerData.put("id", String.valueOf(i)); // Use String for id to match schema
             customerData.put("name", "Customer_" + i);
             customerData.put("email", "customer" + i + "@example.com"); // Add required email field
-            customerData.put("age", 20 + random.nextInt(16)); // Ages 20-35
+            customerData.put("age", 20 + random.nextInt(11)); // Ages 20-30
             customerData.put("city", cities[random.nextInt(cities.length)]);
             
             customers.add(new Record(String.valueOf(i).getBytes(), customerData));
@@ -171,7 +135,7 @@ public class ParquetFileWriter {
     }
     
     /**
-     * Generates middle-aged customers (ages 40-65) for Row Group 2
+     * Generates middle-aged customers (ages 40-50) for Row Group 2
      */
     private static List<Record> generateMiddleAgedCustomers(int count) {
         List<Record> customers = new ArrayList<>();
@@ -183,7 +147,7 @@ public class ParquetFileWriter {
             customerData.put("id", String.valueOf(i)); // Use String for id to match schema
             customerData.put("name", "Customer_" + i);
             customerData.put("email", "customer" + i + "@example.com"); // Add required email field
-            customerData.put("age", 40 + random.nextInt(26)); // Ages 40-65
+            customerData.put("age", 40 + random.nextInt(11)); // Ages 40-50
             customerData.put("city", cities[random.nextInt(cities.length)]);
             
             customers.add(new Record(String.valueOf(i).getBytes(), customerData));
@@ -193,9 +157,9 @@ public class ParquetFileWriter {
     }
     
     /**
-     * Generates mixed age customers (ages 25-45) for Row Group 3
+     * Generates senior customers (ages 60-70) for Row Group 3
      */
-    private static List<Record> generateMixedAgeCustomers(int count) {
+    private static List<Record> generateSeniorCustomers(int count) {
         List<Record> customers = new ArrayList<>();
         String[] cities = {"Los Angeles", "Miami", "Dallas", "Detroit", "Nashville"};
         Random random = new Random(456); // Another seed for variety
@@ -205,7 +169,7 @@ public class ParquetFileWriter {
             customerData.put("id", String.valueOf(i)); // Use String for id to match schema
             customerData.put("name", "Customer_" + i);
             customerData.put("email", "customer" + i + "@example.com"); // Add required email field
-            customerData.put("age", 25 + random.nextInt(21)); // Ages 25-45
+            customerData.put("age", 60 + random.nextInt(11)); // Ages 60-70
             customerData.put("city", cities[random.nextInt(cities.length)]);
             
             customers.add(new Record(String.valueOf(i).getBytes(), customerData));
@@ -226,6 +190,73 @@ public class ParquetFileWriter {
      * Display basic file statistics
      */
     private static void displayFileStatistics(String filePath) {
-        System.out.println("File created: 300 records in 3 row groups (~100 records each)");
+        System.out.println("\n===== Parquet File Statistics =====");
+        System.out.println("File path: " + filePath);
+        
+        try {
+            // Use Hadoop configuration and Path
+            Configuration conf = new Configuration();
+            Path path = new Path(filePath);
+            
+            // Read the footer to get file metadata
+            org.apache.parquet.hadoop.ParquetFileReader reader = 
+                org.apache.parquet.hadoop.ParquetFileReader.open(conf, path);
+            org.apache.parquet.hadoop.metadata.ParquetMetadata metadata = reader.getFooter();
+            
+            // Get file schema
+            MessageType schema = metadata.getFileMetaData().getSchema();
+            System.out.println("Schema: " + schema.toString());
+            
+            // Get row groups information
+            List<org.apache.parquet.hadoop.metadata.BlockMetaData> blocks = metadata.getBlocks();
+            System.out.println("Number of row groups: " + blocks.size());
+            
+            // Calculate total rows
+            long totalRows = 0;
+            for (org.apache.parquet.hadoop.metadata.BlockMetaData block : blocks) {
+                totalRows += block.getRowCount();
+            }
+            System.out.println("Total rows: " + totalRows);
+            
+            // Print row group details
+            System.out.println("\n----- Row Group Details -----");
+            for (int i = 0; i < blocks.size(); i++) {
+                org.apache.parquet.hadoop.metadata.BlockMetaData block = blocks.get(i);
+                System.out.printf("Row Group %d:%n", i + 1);
+                System.out.printf("  Rows: %d%n", block.getRowCount());
+                System.out.printf("  Size: %d bytes%n", block.getTotalByteSize());
+                
+                // Print column chunk details
+                System.out.println("  Column chunks:");
+                List<org.apache.parquet.hadoop.metadata.ColumnChunkMetaData> columns = block.getColumns();
+                for (org.apache.parquet.hadoop.metadata.ColumnChunkMetaData column : columns) {
+                    System.out.printf("    %s: %d bytes, %d values%n", 
+                        column.getPath().toDotString(),
+                        column.getTotalSize(),
+                        column.getValueCount());
+                    
+                    // Print min/max statistics if available
+                    if (column.getStatistics() != null) {
+                        System.out.printf("      Min: %s, Max: %s, Null count: %d%n",
+                            column.getStatistics().minAsString(),
+                            column.getStatistics().maxAsString(),
+                            column.getStatistics().getNumNulls());
+                    }
+                }
+                System.out.println();
+            }
+            
+            // Print file size
+            java.io.File file = new java.io.File(filePath);
+            System.out.printf("Total file size: %d bytes%n", file.length());
+            
+            // Close the reader
+            reader.close();
+            
+        } catch (IOException e) {
+            System.err.println("Error reading Parquet file statistics: " + e.getMessage());
+        }
+        
+        System.out.println("===================================\n");
     }
 } 

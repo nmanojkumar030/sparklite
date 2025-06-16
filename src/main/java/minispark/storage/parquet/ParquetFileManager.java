@@ -17,11 +17,6 @@ import java.util.Set;
  * - File versioning for updates/deletes
  * - Directory structure organization
  * - Cleanup and maintenance operations
- * 
- * Design Principles:
- * - Single Responsibility: Only handles file management
- * - Immutable Files: Use versioning instead of modification
- * - Clear Naming: Predictable file naming patterns
  */
 public class ParquetFileManager {
     
@@ -78,45 +73,7 @@ public class ParquetFileManager {
         logFileDiscovery(parquetFiles.size());
         return parquetFiles;
     }
-    
-    /**
-     * Marks a record as deleted (for immutable file handling).
-     * 
-     * @param key Record key to mark as deleted
-     */
-    public void markRecordAsDeleted(byte[] key) {
-        deletedRecords.add(key);
-        logRecordDeleted(key);
-    }
-    
-    /**
-     * Checks if a record is marked as deleted.
-     * 
-     * @param key Record key to check
-     * @return true if record is deleted
-     */
-    public boolean isRecordDeleted(byte[] key) {
-        return deletedRecords.contains(key);
-    }
-    
-    /**
-     * Gets the base path for files.
-     * 
-     * @return Base directory path
-     */
-    public String getBasePath() {
-        return basePath;
-    }
-    
-    /**
-     * Gets current file version number.
-     * 
-     * @return Current version number
-     */
-    public int getCurrentVersion() {
-        return currentVersion;
-    }
-    
+
     /**
      * Closes the file manager and cleans up resources.
      * 
@@ -124,7 +81,6 @@ public class ParquetFileManager {
      */
     public void close() throws IOException {
         logManagerClose();
-        // Cleanup operations if needed
     }
     
     // Private helper methods
@@ -168,9 +124,7 @@ public class ParquetFileManager {
         }
         return maxVersion;
     }
-    
-    // Educational logging methods
-    
+
     private void logDirectoryCreated() {
         System.out.println("   📁 Created directory: " + basePath);
     }

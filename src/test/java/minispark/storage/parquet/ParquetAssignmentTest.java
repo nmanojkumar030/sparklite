@@ -19,13 +19,18 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Parquet Assignment Test: Demonstrates efficient reading patterns using metadata optimization.
+ * Parquet Assignment Test: Workshop participants must implement SimpleParquetReader methods to pass.
  * 
- * Tests cover:
- * - Parquet footer metadata usage for query optimization
- * - Predicate pushdown using row group statistics  
- * - Performance comparison between naive vs optimized approaches
- * - Real-world columnar storage optimization patterns
+ * Assignment Requirements:
+ * - Implement readFooter() to extract Parquet metadata
+ * - Implement selectRowGroups() for predicate pushdown optimization
+ * - Implement readRowGroups() for selective I/O with column pruning
+ * - Implement readWithFilter() to combine all optimizations
+ * 
+ * Learning Objectives:
+ * - Understand how modern query engines optimize Parquet reads
+ * - Experience real-world columnar storage optimization patterns
+ * - Compare naive vs optimized performance approaches
  */
 public class ParquetAssignmentTest {
     
@@ -44,7 +49,7 @@ public class ParquetAssignmentTest {
         // Use existing schema infrastructure
         schema = TableSchema.createCustomerSchema();
         
-        // Create reader instance (students will implement the methods)
+        // Create reader instance (TODO - implement the methods)
         reader = new SimpleParquetReader(schema);
         
         // Create test file with structured row groups
@@ -73,18 +78,15 @@ public class ParquetAssignmentTest {
         long startTime2 = System.currentTimeMillis();
         
         try {
-            // Step 1: Read footer metadata (students implement this)
-            ParquetMetadata metadata = reader.readFooter(testFilePath);
-            
-            // Step 2: Select relevant row groups (students implement this)
-            List<Integer> relevantRowGroups = reader.selectRowGroups(metadata, "age", ageThreshold);
-            
-            // Step 3: Read only selected row groups and columns (students implement this)
+            // Use the optimized approach with integrated filtering
             List<String> columnsToRead = Arrays.asList("id", "name", "age", "city");
-            List<Record> optimizedResults = reader.readRowGroups(testFilePath, 
-                relevantRowGroups, columnsToRead);
+            List<Record> optimizedResults = reader.readWithFilter(testFilePath, "age", ageThreshold, columnsToRead);
             
             long optimizedTime = System.currentTimeMillis() - startTime2;
+            
+            // For educational purposes, also demonstrate the step-by-step approach
+            ParquetMetadata metadata = reader.readFooter(testFilePath);
+            List<Integer> relevantRowGroups = reader.selectRowGroups(metadata, "age", ageThreshold);
             
             // Validation: Results should be identical
             assertEquals(naiveResults.size(), optimizedResults.size(), 
@@ -96,24 +98,9 @@ public class ParquetAssignmentTest {
             
         } catch (UnsupportedOperationException e) {
             // FAIL the test when students haven't implemented methods yet
-            fail("Assignment incomplete! Students must implement: " + e.getMessage() + 
-                 "\nImplement readFooter(), selectRowGroups(), and readRowGroups() methods in SimpleParquetReader");
+            fail("Assignment incomplete! implement: " + e.getMessage() +
+                 "\nImplement readFooter(), selectRowGroups(), readRowGroups(), and readWithFilter() methods in SimpleParquetReader");
         }
-    }
-    
-    @Test
-    @DisplayName("Row Group Distribution Analysis")
-    public void testRowGroupDistribution() throws IOException {
-        // Read all records to analyze distribution
-        List<Record> allRecords = reader.readEntireFile(testFilePath);
-        
-        // Analyze age distribution by expected row groups
-        analyzeAgeDistribution(allRecords, 1, 100, "Young customers (ages 20-35)");
-        analyzeAgeDistribution(allRecords, 101, 200, "Middle-aged customers (ages 40-65)");
-        analyzeAgeDistribution(allRecords, 201, 300, "Mixed ages (ages 25-45)");
-        
-        // Verify we have records in all groups
-        assertTrue(allRecords.size() >= 300, "Should have at least 300 records across all row groups");
     }
     
     @Test

@@ -41,7 +41,7 @@ public class ParquetOperations {
      * Uses row group filtering for optimization.
      */
     public Optional<Map<String, Object>> searchInFile(String filename, byte[] key) throws IOException {
-        ParquetEducationalLogger.logParquetSearchStart(filename, key);
+        ParquetLogHelper.logParquetSearchStart(filename, key);
         
         try {
             Path parquetPath = new Path(filename);
@@ -52,7 +52,7 @@ public class ParquetOperations {
             }
             
         } catch (IOException e) {
-            ParquetEducationalLogger.logParquetSearchError(filename, key, e);
+            ParquetLogHelper.logParquetSearchError(filename, key, e);
             throw new IOException("Failed to search Parquet file: " + filename, e);
         }
     }
@@ -62,7 +62,7 @@ public class ParquetOperations {
      * Uses row group filtering and column projection.
      */
     public List<Record> scanFile(String filename, byte[] startKey, byte[] endKey, List<String> columns) throws IOException {
-        ParquetEducationalLogger.logParquetScanStart(filename, startKey, endKey, columns);
+        ParquetLogHelper.logParquetScanStart(filename, startKey, endKey, columns);
         
         List<Record> results = new ArrayList<>();
         
@@ -74,11 +74,11 @@ public class ParquetOperations {
                 results = performRangeScan(fileReader, startKey, endKey, columns);
             }
             
-            ParquetEducationalLogger.logParquetScanComplete(filename, results.size());
+            ParquetLogHelper.logParquetScanComplete(filename, results.size());
             return results;
             
         } catch (IOException e) {
-            ParquetEducationalLogger.logParquetScanError(filename, e);
+            ParquetLogHelper.logParquetScanError(filename, e);
             throw new IOException("Failed to scan Parquet file: " + filename, e);
         }
     }

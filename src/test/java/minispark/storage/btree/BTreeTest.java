@@ -144,7 +144,4 @@ public class BTreeTest {
     
     // TODO: testLargeValue() - Implement overflow page support for values larger than page size
     // This test was failing because overflow pages are not yet implemented
-    
-    // TODO: testConcurrentAccess() - Add thread safety and concurrent access support
-    // This test was failing because the BTree is not thread-safe yet
 } 

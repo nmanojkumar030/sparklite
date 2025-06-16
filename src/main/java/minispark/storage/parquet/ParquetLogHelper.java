@@ -4,56 +4,62 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * EDUCATIONAL: Utility class for Parquet storage educational logging.
+ * Utility class for Parquet storage educational logging.
  * 
  * Extracted from ParquetStorage to reduce toxicity:
  * - Reduces file length
  * - Decreases class coupling
  * - Improves single responsibility
  */
-public class ParquetEducationalLogger {
+public class ParquetLogHelper {
     
     public static void logStorageCreation() {
-        System.out.println("🏗️ EDUCATIONAL: Creating ParquetStorage");
+        System.out.println("🏗️ Creating ParquetStorage");
         System.out.println("   📊 Columnar format optimized for analytics");
         System.out.println("   🔄 Batch-oriented writes with buffering");
         System.out.println("   📈 Excellent scan performance");
     }
     
     public static void logSingleWrite(byte[] key) {
-        System.out.println("✏️ EDUCATIONAL: ParquetStorage.write()");
+        System.out.println("✏️ ParquetStorage.write()");
         System.out.println("   🔑 Key: " + new String(key));
         System.out.println("   📦 Buffering for batch efficiency");
     }
     
     public static void logBatchWrite(int recordCount) {
-        System.out.println("📦 EDUCATIONAL: ParquetStorage.writeBatch()");
+        System.out.println("📦 ParquetStorage.writeBatch()");
         System.out.println("   📊 Records: " + recordCount);
         System.out.println("   ✅ Strength: Efficient batch operations");
     }
     
     public static void logPointLookup(byte[] key) {
-        System.out.println("🔍 EDUCATIONAL: ParquetStorage.read()");
+        System.out.println("🔍 ParquetStorage.read()");
         System.out.println("   🔑 Key: " + new String(key));
         System.out.println("   ⚠️ Trade-off: Slower point lookups vs excellent scans");
     }
     
     public static void logRangeScan(byte[] startKey, byte[] endKey, List<String> columns) {
-        System.out.println("🔍 EDUCATIONAL: ParquetStorage.scan()");
+        System.out.println("🔍 ParquetStorage.scan()");
         System.out.println("   📊 Range: [" + new String(startKey) + ", " + 
                           (endKey != null ? new String(endKey) : "END") + "]");
         System.out.println("   🎯 Columns: " + (columns != null ? columns : "ALL"));
         System.out.println("   ✅ Strength: Excellent for analytical scans");
     }
     
+    public static void logUpdate(byte[] key) {
+        System.out.println("🔄 ParquetStorage.update()");
+        System.out.println("   🔑 Key: " + new String(key));
+        System.out.println("   📝 Strategy: Copy-on-Write (mark deleted + append new)");
+    }
+
     public static void logDelete(byte[] key) {
-        System.out.println("🗑️ EDUCATIONAL: ParquetStorage.delete()");
+        System.out.println("🗑️ ParquetStorage.delete()");
         System.out.println("   🔑 Key: " + new String(key));
         System.out.println("   📝 Strategy: Mark as deleted (immutable files)");
     }
     
     public static void logStorageClose() {
-        System.out.println("🔒 EDUCATIONAL: Closing ParquetStorage");
+        System.out.println("🔒 Closing ParquetStorage");
         System.out.println("   💾 Flushing any buffered records");
         System.out.println("   🧹 Cleaning up resources");
     }

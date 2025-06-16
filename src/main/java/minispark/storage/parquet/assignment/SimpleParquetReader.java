@@ -8,7 +8,7 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * SimpleParquetReader skeleton for students to implement.
+ * SimpleParquetReader skeleton  to implement.
  * 
  * Demonstrates efficient Parquet reading patterns:
  * - Footer metadata usage for query optimization
@@ -29,7 +29,7 @@ public class SimpleParquetReader {
     }
     
     /**
-     * TODO FOR STUDENTS: Read Parquet footer and extract metadata
+     * TODO : Read Parquet footer and extract metadata
      * 
      * LEARNING: Footer contains ALL row group statistics that enable query optimization
      * 
@@ -41,7 +41,7 @@ public class SimpleParquetReader {
      * @throws IOException if file reading fails
      */
     public minispark.storage.parquet.assignment.ParquetMetadata readFooter(String filePath) throws IOException {
-        // TODO: Students implement this method
+        // TODO: implement this method
         // Steps:
         // 1. Open Parquet file using Hadoop Path and Configuration
         // 2. Create ParquetFileReader using HadoopInputFile
@@ -50,13 +50,13 @@ public class SimpleParquetReader {
         // 5. Return the wrapped metadata
         
         throw new UnsupportedOperationException(
-            "Students must implement readFooter() - " +
+            "must implement readFooter() - " +
             "Use ParquetFileReader.open() and getFooter()"
         );
     }
     
     /**
-     * TODO FOR STUDENTS: Use statistics to determine which row groups to read
+     * TODO : Use statistics to determine which row groups to read
      * 
      * LEARNING: Predicate pushdown optimization - skip entire row groups
      * 
@@ -69,7 +69,7 @@ public class SimpleParquetReader {
      * @return List of row group indices that might contain matching data
      */
     public List<Integer> selectRowGroups(minispark.storage.parquet.assignment.ParquetMetadata metadata, String column, int minValue) {
-        // TODO: Students implement this method
+        // TODO: implement this method
         // Steps:
         // 1. Iterate through all row groups in metadata
         // 2. For each row group, get statistics for the specified column
@@ -77,7 +77,7 @@ public class SimpleParquetReader {
         // 4. Return list of row group indices that might contain data
         
         throw new UnsupportedOperationException(
-            "Students must implement selectRowGroups() - " +
+            "must implement selectRowGroups() - " +
             "Check if maxValue >= minValue for each row group"
         );
     }
@@ -98,7 +98,7 @@ public class SimpleParquetReader {
      */
     public List<Record> readRowGroups(String filePath, List<Integer> rowGroupIndices, 
                                     List<String> columns) throws IOException {
-        // TODO: Students implement this method
+        // TODO: implement this method
         // Steps:
         // 1. Open ParquetFileReader
         // 2. For each row group index in rowGroupIndices:
@@ -108,15 +108,42 @@ public class SimpleParquetReader {
         // 3. Return combined results
         
         throw new UnsupportedOperationException(
-            "Students must implement readRowGroups() - " +
+            "must implement readRowGroups() - " +
             "Use ParquetFileReader to read specific row groups"
+        );
+    }
+    
+    /**
+     * TODO: Read selected row groups with predicate filtering
+     * 
+     * This method should combine row group selection with predicate filtering for optimal performance.
+     * 
+     * @param filePath Path to the Parquet file
+     * @param filterColumn Column to filter on (e.g., "age")
+     * @param minValue Minimum value for the filter (e.g., age > 35)
+     * @param columns Which columns to read (column pruning)
+     * @return List of matching records
+     * @throws IOException if file reading fails
+     */
+    public List<Record> readWithFilter(String filePath, String filterColumn, int minValue, 
+                                     List<String> columns) throws IOException {
+        // TODO: implement this method by combining the other methods
+        // Steps:
+        // 1. Read footer metadata using readFooter()
+        // 2. Select relevant row groups using selectRowGroups()
+        // 3. Read selected row groups and apply filtering
+        // 4. Return filtered results
+        
+        throw new UnsupportedOperationException(
+            "must implement readWithFilter() - " +
+            "Combine readFooter(), selectRowGroups(), and readRowGroups() with filtering"
         );
     }
     
     /**
      * HELPER METHOD: Naive approach - read entire file
      * 
-     * This is provided to students for performance comparison.
+     * This is provided for performance comparison.
      * Shows the difference between optimized and unoptimized approaches.
      */
     public List<Record> readEntireFile(String filePath) throws IOException {

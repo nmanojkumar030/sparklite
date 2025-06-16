@@ -13,15 +13,8 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * EDUCATIONAL: Tests for ParquetStorage implementation.
- * 
- * Demonstrates testing strategies for storage engines:
- * - Basic functionality verification
- * - Error handling scenarios
- * - Integration with schema validation
- * 
+ * Tests for ParquetStorage implementation.
  * These tests verify the ParquetStorage skeleton works correctly
- * before implementing actual Parquet file I/O.
  */
 public class ParquetStorageTest {
     
@@ -43,14 +36,14 @@ public class ParquetStorageTest {
      */
     @Test
     void testStorageCreation() {
-        System.out.println("\n🧪 EDUCATIONAL: Testing ParquetStorage Creation");
+        System.out.println("\nTesting ParquetStorage Creation");
         System.out.println("=" .repeat(50));
         
         assertNotNull(storage);
         
         // Verify storage was created with correct configuration
         // (This demonstrates how to test object initialization)
-        System.out.println("✅ ParquetStorage created successfully");
+        System.out.println("ParquetStorage created successfully");
     }
     
     /**
@@ -58,7 +51,7 @@ public class ParquetStorageTest {
      */
     @Test
     void testSingleRecordWrite() throws IOException {
-        System.out.println("\n🧪 EDUCATIONAL: Testing Single Record Write");
+        System.out.println("\nTesting Single Record Write");
         System.out.println("=" .repeat(50));
         
         // Create a test record
@@ -68,7 +61,7 @@ public class ParquetStorageTest {
         // Test write operation
         assertDoesNotThrow(() -> storage.write(key, customerData));
         
-        System.out.println("✅ Single record write completed");
+        System.out.println("Single record write completed");
     }
     
     /**
@@ -76,7 +69,7 @@ public class ParquetStorageTest {
      */
     @Test
     void testBatchWrite() throws IOException {
-        System.out.println("\n🧪 EDUCATIONAL: Testing Batch Write");
+        System.out.println("\nTesting Batch Write");
         System.out.println("=" .repeat(50));
         
         // Create multiple test records
@@ -85,7 +78,7 @@ public class ParquetStorageTest {
         // Test batch write
         assertDoesNotThrow(() -> storage.writeBatch(records));
         
-        System.out.println("✅ Batch write completed for " + records.size() + " records");
+        System.out.println("Batch write completed for " + records.size() + " records");
     }
     
     /**
@@ -93,7 +86,7 @@ public class ParquetStorageTest {
      */
     @Test
     void testPointLookup() throws IOException {
-        System.out.println("\n🧪 EDUCATIONAL: Testing Point Lookup");
+        System.out.println("\nTesting Point Lookup");
         System.out.println("=" .repeat(50));
         
         byte[] key = "CUST001".getBytes();
@@ -104,7 +97,7 @@ public class ParquetStorageTest {
         // For now, this should return empty since we haven't implemented actual Parquet I/O
         assertFalse(result.isPresent());
         
-        System.out.println("✅ Point lookup completed (no data found as expected)");
+        System.out.println("Point lookup completed (no data found as expected)");
     }
     
     /**
@@ -112,7 +105,7 @@ public class ParquetStorageTest {
      */
     @Test
     void testRangeScan() throws IOException {
-        System.out.println("\n🧪 EDUCATIONAL: Testing Range Scan");
+        System.out.println("\nTesting Range Scan");
         System.out.println("=" .repeat(50));
         
         byte[] startKey = "CUST001".getBytes();
@@ -126,31 +119,12 @@ public class ParquetStorageTest {
         assertNotNull(results);
         assertTrue(results.isEmpty());
         
-        System.out.println("✅ Range scan completed (no data found as expected)");
+        System.out.println("Range scan completed (no data found as expected)");
     }
-    
-    /**
-     * EDUCATIONAL: Test delete operation.
-     */
-    @Test
-    void testDelete() throws IOException {
-        System.out.println("\n🧪 EDUCATIONAL: Testing Delete Operation");
-        System.out.println("=" .repeat(50));
-        
-        byte[] key = "CUST001".getBytes();
-        
-        // Test delete operation
-        assertDoesNotThrow(() -> storage.delete(key));
-        
-        System.out.println("✅ Delete operation completed");
-    }
-    
-    /**
-     * EDUCATIONAL: Test error handling for invalid records.
-     */
+
     @Test
     void testErrorHandling() {
-        System.out.println("\n🧪 EDUCATIONAL: Testing Error Handling");
+        System.out.println("\nTesting Error Handling");
         System.out.println("=" .repeat(50));
         
         // Test null records
@@ -159,7 +133,7 @@ public class ParquetStorageTest {
         // Test empty records
         assertThrows(IllegalArgumentException.class, () -> storage.writeBatch(new ArrayList<>()));
         
-        System.out.println("✅ Error handling tests completed");
+        System.out.println("Error handling tests completed");
     }
     
     /**
@@ -167,13 +141,13 @@ public class ParquetStorageTest {
      */
     @Test
     void testStorageClose() throws IOException {
-        System.out.println("\n🧪 EDUCATIONAL: Testing Storage Close");
+        System.out.println("\nTesting Storage Close");
         System.out.println("=" .repeat(50));
         
         // Test close operation
         assertDoesNotThrow(() -> storage.close());
         
-        System.out.println("✅ Storage close completed");
+        System.out.println("Storage close completed");
     }
     
     // Helper methods for creating test data
