@@ -73,7 +73,7 @@ public class MapRDD<T, R> implements MiniRDD<R> {
                 List<R> result = new ArrayList<>();
                 for (CompletableFuture<Iterator<R>> future : futures) {
                     try {
-                        Iterator<R> iter = future.get();
+                        Iterator<R> iter = future.join();
                         while (iter.hasNext()) {
                             result.add(iter.next());
                         }

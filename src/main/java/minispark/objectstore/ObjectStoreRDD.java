@@ -95,7 +95,7 @@ public class ObjectStoreRDD implements MiniRDD<byte[]> {
                         List<byte[]> partitionData = new ArrayList<>();
                         for (CompletableFuture<byte[]> future : dataFutures) {
                             try {
-                                byte[] data = future.get();
+                                byte[] data = future.join();
                                 if (data != null) {
                                     partitionData.add(data);
                                 }
@@ -148,7 +148,7 @@ public class ObjectStoreRDD implements MiniRDD<byte[]> {
                 List<byte[]> result = new ArrayList<>();
                 for (CompletableFuture<Iterator<byte[]>> future : futures) {
                     try {
-                        Iterator<byte[]> iter = future.get();
+                        Iterator<byte[]> iter = future.join();
                         while (iter.hasNext()) {
                             result.add(iter.next());
                         }

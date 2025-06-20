@@ -115,7 +115,7 @@ public class FileFormatRDD<T> implements MiniRDD<T> {
                 List<T> result = new ArrayList<>();
                 for (CompletableFuture<Iterator<T>> future : futures) {
                     try {
-                        Iterator<T> iter = future.get();
+                        Iterator<T> iter = future.join();
                         while (iter.hasNext()) {
                             result.add(iter.next());
                         }

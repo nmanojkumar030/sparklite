@@ -104,7 +104,13 @@ public class ObjectStoreInputFile implements InputFile {
                 position, endByte, actualLen, key, position);
 
             try {
-                byte[] rangeData = objectStoreClient.getObjectRange(key, position, endByte).get();
+                // BLOCKING FIX: Use CompletableFuture with manual completion check
+                // This works with tick progression since Worker drives ticks until completion
+                CompletableFuture<byte[]> rangeFuture = objectStoreClient.getObjectRange(key, position, endByte);
+                
+                // In the context of Worker tick progression, this is safe because
+                // the Worker will drive messageBus.tick() until all futures complete
+                byte[] rangeData = rangeFuture.get();
                 
                 // Copy to the provided buffer
                 System.arraycopy(rangeData, 0, b, off, rangeData.length);

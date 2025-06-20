@@ -22,6 +22,7 @@ class SyncClientTest {
     @BeforeEach
     void setUp(@TempDir Path tempDir) {
         messageBus = new MessageBus();
+        messageBus.start();
         objectStoreCluster = new ObjectStoreCluster(messageBus, tempDir, 3);
         objectStoreCluster.start();
         

@@ -19,8 +19,14 @@ public class MessageBus {
     private long messageIdGenerator = 0;
     // Network simulator for realistic network behavior
     private final SimulatedNetwork network;
+    private boolean started = false;
+    private final long seed;
 
     public void tick() {
+        if (!started) {
+            return;
+        }
+        
         network.tick();
     }
 
@@ -32,16 +38,20 @@ public class MessageBus {
      * Creates a MessageBus with default network settings.
      */
     public MessageBus() {
-        this.network = new SimulatedNetwork(this::deliverMessage);
+        this(0L);
     }
 
     /**
-     * Configures the message loss rate for the network.
-     *
-     * @param rate A value between 0.0 (no loss) and 1.0 (all messages lost)
+     * SEED CONFIGURATION: Constructor with configurable seed for fuzz testing.
+     * This allows fuzz tests to supply any seed and store it with their history
+     * for reproducible test failures.
+     * 
+     * @param seed Random seed for deterministic but varied behavior
      */
-    public void setMessageLossRate(double rate) {
-        network.withMessageLossRate(rate);
+    public MessageBus(long seed) {
+        this.seed = seed;
+        this.network = new SimulatedNetwork(this::deliverMessage, seed);
+        logger.info("MessageBus initialized with seed: {}", seed);
     }
 
     /**
@@ -76,7 +86,8 @@ public class MessageBus {
      * Starts the message bus and the network simulator.
      */
     public void start() {
-        logger.info("MessageBus started");
+        started = true;
+        logger.info("MessageBus started with seed {}", seed);
     }
 
 
@@ -84,6 +95,8 @@ public class MessageBus {
      * Stops the message bus and the network simulator.
      */
     public void stop() {
+        started = false;
+        handlers.clear();
         logger.info("MessageBus stopped");
     }
 
@@ -91,8 +104,8 @@ public class MessageBus {
      * Registers a handler for a specific endpoint.
      */
     public void registerHandler(NetworkEndpoint endpoint, MessageHandler handler) {
-        logger.info("Registering handler for endpoint: {}", endpoint);
         handlers.put(endpoint, handler);
+        logger.debug("Registered handler for endpoint: {}", endpoint);
     }
 
     /**
@@ -100,13 +113,17 @@ public class MessageBus {
      */
     public void unregisterHandler(NetworkEndpoint endpoint) {
         handlers.remove(endpoint);
-        logger.info("Unregistered handler for endpoint: {}", endpoint);
+        logger.debug("Unregistered handler for endpoint: {}", endpoint);
     }
 
     /**
      * Sends a message from a source endpoint to a destination endpoint.
      */
     public void send(Message message, NetworkEndpoint source, NetworkEndpoint destination) {
+        if (!started) {
+            throw new IllegalStateException("MessageBus not started");
+        }
+        
         long messageId = ++messageIdGenerator;
         MessageEnvelope envelope = new MessageEnvelope(messageId, message, source, destination);
         
@@ -161,5 +178,41 @@ public class MessageBus {
      */
     public int getQueueSize() {
         return network.getQueueSize();
+    }
+    
+    /**
+     * SEED CONFIGURATION: Get the seed used by this MessageBus.
+     * Useful for logging and test result correlation.
+     */
+    public long getSeed() {
+        return seed;
+    }
+    
+    /**
+     * SEED CONFIGURATION: Builder pattern for easy configuration.
+     */
+    public static class Builder {
+        private long seed = 0L;
+        
+        public Builder withSeed(long seed) {
+            this.seed = seed;
+            return this;
+        }
+        
+        public Builder withRandomSeed() {
+            this.seed = System.nanoTime();
+            return this;
+        }
+        
+        public MessageBus build() {
+            return new MessageBus(seed);
+        }
+    }
+    
+    /**
+     * SEED CONFIGURATION: Create a builder for fluent configuration.
+     */
+    public static Builder builder() {
+        return new Builder();
     }
 } 
