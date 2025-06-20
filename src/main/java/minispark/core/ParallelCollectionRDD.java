@@ -4,6 +4,7 @@ import minispark.MiniSparkContext;
 import minispark.core.transformations.MapRDD;
 import minispark.core.transformations.FilterRDD;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -38,15 +39,15 @@ public class ParallelCollectionRDD<T> implements MiniRDD<T> {
     }
 
     @Override
-    public Iterator<T> compute(Partition split) {
+    public CompletableFuture<Iterator<T>> compute(Partition split) {
         if (!(split instanceof ParallelCollectionPartition)) {
-            throw new IllegalArgumentException("Invalid partition type: " + 
-                split.getClass().getName() + ", expected: ParallelCollectionPartition");
+            return CompletableFuture.failedFuture(new IllegalArgumentException("Invalid partition type: " + 
+                split.getClass().getName() + ", expected: ParallelCollectionPartition"));
         }
         
         @SuppressWarnings("unchecked")
         ParallelCollectionPartition<T> partition = (ParallelCollectionPartition<T>) split;
-        return partition.iterator();
+        return CompletableFuture.completedFuture(partition.iterator());
     }
 
     @Override
@@ -70,14 +71,27 @@ public class ParallelCollectionRDD<T> implements MiniRDD<T> {
     }
 
     @Override
-    public List<T> collect() {
-        List<T> result = new ArrayList<>();
+    public CompletableFuture<List<T>> collect() {
+        List<CompletableFuture<Iterator<T>>> futures = new ArrayList<>();
+        
         for (Partition partition : getPartitions()) {
-            Iterator<T> iter = compute(partition);
-            while (iter.hasNext()) {
-                result.add(iter.next());
-            }
+            futures.add(compute(partition));
         }
-        return result;
+        
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .thenApply(v -> {
+                List<T> result = new ArrayList<>();
+                for (CompletableFuture<Iterator<T>> future : futures) {
+                    try {
+                        Iterator<T> iter = future.get();
+                        while (iter.hasNext()) {
+                            result.add(iter.next());
+                        }
+                    } catch (Exception e) {
+                        throw new RuntimeException("Failed to get partition result", e);
+                    }
+                }
+                return result;
+            });
     }
 } 

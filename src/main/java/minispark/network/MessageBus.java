@@ -4,9 +4,9 @@ import minispark.messages.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Message bus for communication between nodes in the MiniSpark cluster.
@@ -15,20 +15,14 @@ import java.util.concurrent.atomic.AtomicLong;
 public class MessageBus {
     private static final Logger logger = LoggerFactory.getLogger(MessageBus.class);
 
-    private final Map<NetworkEndpoint, MessageHandler> handlers = new ConcurrentHashMap<>();
-    private final AtomicLong messageIdGenerator = new AtomicLong(0);
-    private volatile boolean isRunning = false;
-    
+    private final Map<NetworkEndpoint, MessageHandler> handlers = new HashMap<>();
+    private long messageIdGenerator = 0;
     // Network simulator for realistic network behavior
     private final SimulatedNetwork network;
-    
-    // Scheduler for ticking the network simulator
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private ScheduledFuture<?> tickTask;
-    
-    // Tick interval in milliseconds
-    private static final long DEFAULT_TICK_INTERVAL_MS = 100;
-    private long tickIntervalMs = DEFAULT_TICK_INTERVAL_MS;
+
+    public void tick() {
+        network.tick();
+    }
 
     public interface MessageHandler {
         void handleMessage(Message message, NetworkEndpoint sender);
@@ -41,24 +35,6 @@ public class MessageBus {
         this.network = new SimulatedNetwork(this::deliverMessage);
     }
 
-    /**
-     * Sets the network tick interval.
-     * 
-     * @param intervalMs The interval between ticks in milliseconds
-     */
-    public void setTickInterval(long intervalMs) {
-        if (intervalMs <= 0) {
-            throw new IllegalArgumentException("Tick interval must be positive");
-        }
-        this.tickIntervalMs = intervalMs;
-        
-        // Restart tick task if running
-        if (isRunning && tickTask != null) {
-            tickTask.cancel(false);
-            startTickTask();
-        }
-    }
-    
     /**
      * Configures the message loss rate for the network.
      *
@@ -100,44 +76,14 @@ public class MessageBus {
      * Starts the message bus and the network simulator.
      */
     public void start() {
-        isRunning = true;
-        startTickTask();
         logger.info("MessageBus started");
     }
 
-    private void startTickTask() {
-        tickTask = scheduler.scheduleAtFixedRate(
-            () -> {
-                try {
-                    int delivered = network.tick();
-                    if (delivered > 0) {
-                        logger.debug("Network tick delivered {} messages", delivered);
-                    }
-                } catch (Exception e) {
-                    logger.error("Error during network tick", e);
-                }
-            },
-            tickIntervalMs, tickIntervalMs, TimeUnit.MILLISECONDS
-        );
-    }
 
     /**
      * Stops the message bus and the network simulator.
      */
     public void stop() {
-        isRunning = false;
-        if (tickTask != null) {
-            tickTask.cancel(false);
-        }
-        scheduler.shutdown();
-        try {
-            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                scheduler.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            scheduler.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
         logger.info("MessageBus stopped");
     }
 
@@ -161,12 +107,7 @@ public class MessageBus {
      * Sends a message from a source endpoint to a destination endpoint.
      */
     public void send(Message message, NetworkEndpoint source, NetworkEndpoint destination) {
-        if (!isRunning) {
-            logger.warn("Cannot send message when MessageBus is not running");
-            return;
-        }
-        
-        long messageId = messageIdGenerator.incrementAndGet();
+        long messageId = ++messageIdGenerator;
         MessageEnvelope envelope = new MessageEnvelope(messageId, message, source, destination);
         
         boolean scheduled = network.sendMessage(envelope);
@@ -204,7 +145,7 @@ public class MessageBus {
      */
     public void reset() {
         network.reset();
-        messageIdGenerator.set(0);
+        messageIdGenerator = 0;
         logger.info("MessageBus reset");
     }
     

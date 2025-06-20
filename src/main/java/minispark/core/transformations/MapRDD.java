@@ -3,6 +3,7 @@ package minispark.core.transformations;
 import minispark.core.MiniRDD;
 import minispark.core.Partition;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -23,19 +24,20 @@ public class MapRDD<T, R> implements MiniRDD<R> {
     }
 
     @Override
-    public Iterator<R> compute(Partition split) {
-        Iterator<T> parentIter = parent.compute(split);
-        return new Iterator<R>() {
-            @Override
-            public boolean hasNext() {
-                return parentIter.hasNext();
-            }
+    public CompletableFuture<Iterator<R>> compute(Partition split) {
+        return parent.compute(split).thenApply(parentIter -> {
+            return new Iterator<R>() {
+                @Override
+                public boolean hasNext() {
+                    return parentIter.hasNext();
+                }
 
-            @Override
-            public R next() {
-                return mapFunction.apply(parentIter.next());
-            }
-        };
+                @Override
+                public R next() {
+                    return mapFunction.apply(parentIter.next());
+                }
+            };
+        });
     }
 
     @Override
@@ -59,14 +61,27 @@ public class MapRDD<T, R> implements MiniRDD<R> {
     }
 
     @Override
-    public List<R> collect() {
-        List<R> result = new ArrayList<>();
+    public CompletableFuture<List<R>> collect() {
+        List<CompletableFuture<Iterator<R>>> futures = new ArrayList<>();
+        
         for (Partition partition : getPartitions()) {
-            Iterator<R> iter = compute(partition);
-            while (iter.hasNext()) {
-                result.add(iter.next());
-            }
+            futures.add(compute(partition));
         }
-        return result;
+        
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .thenApply(v -> {
+                List<R> result = new ArrayList<>();
+                for (CompletableFuture<Iterator<R>> future : futures) {
+                    try {
+                        Iterator<R> iter = future.get();
+                        while (iter.hasNext()) {
+                            result.add(iter.next());
+                        }
+                    } catch (Exception e) {
+                        throw new RuntimeException("Failed to get partition result", e);
+                    }
+                }
+                return result;
+            });
     }
 } 

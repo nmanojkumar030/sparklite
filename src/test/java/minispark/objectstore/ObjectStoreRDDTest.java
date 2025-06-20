@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutionException;
 import java.util.Collections;
@@ -57,7 +58,14 @@ class ObjectStoreRDDTest {
     @Test
     void testEmptyRDD() throws Exception {
         ObjectStoreRDD rdd = new ObjectStoreRDD(sc, objectStoreClient, "test-", 2);
-        List<byte[]> result = rdd.collect();
+        CompletableFuture<List<byte[]>> collectFuture = rdd.collect();
+        
+        // Use TestUtils to drive ticks until completion
+        minispark.util.TestUtils.runUntil(messageBus,
+                () -> collectFuture.isDone(),
+                java.time.Duration.ofSeconds(5));
+        
+        List<byte[]> result = collectFuture.get();
         assertTrue(result.isEmpty());
     }
 
@@ -75,30 +83,38 @@ class ObjectStoreRDDTest {
         // Write test data
         for (String data : testData) {
             String key = data.split(":")[0];
-            objectStoreClient.putObject(key, data.getBytes()).get(5, TimeUnit.SECONDS);
+            CompletableFuture<Void> putFuture = objectStoreClient.putObject(key, data.getBytes());
+            minispark.util.TestUtils.runUntil(messageBus, () -> putFuture.isDone(), java.time.Duration.ofSeconds(5));
+            putFuture.get();
         }
 
         // Create RDD
         ObjectStoreRDD rdd = new ObjectStoreRDD(sc, objectStoreClient, "customer-", 2);
 
         // Test map operation
-        List<String> mappedNames = rdd.map(line -> new String(line).split(":")[1]).collect();
+        CompletableFuture<List<String>> mappedFuture = rdd.map(line -> new String(line).split(":")[1]).collect();
+        minispark.util.TestUtils.runUntil(messageBus, () -> mappedFuture.isDone(), java.time.Duration.ofSeconds(5));
+        List<String> mappedNames = mappedFuture.get();
         assertEquals(5, mappedNames.size());
         assertTrue(mappedNames.contains("John Doe"));
         assertTrue(mappedNames.contains("Jane Smith"));
 
         // Test filter operation
-        List<byte[]> filteredAges = rdd.filter(line -> Integer.parseInt(new String(line).split(":")[2]) > 30).collect();
+        CompletableFuture<List<byte[]>> filteredFuture = rdd.filter(line -> Integer.parseInt(new String(line).split(":")[2]) > 30).collect();
+        minispark.util.TestUtils.runUntil(messageBus, () -> filteredFuture.isDone(), java.time.Duration.ofSeconds(5));
+        List<byte[]> filteredAges = filteredFuture.get();
         List<String> filetered = filteredAges.stream().map(b -> new String(b)).collect(Collectors.toList());
         assertEquals(2, filteredAges.size());
         assertTrue(filetered.contains("customer-3:Bob Johnson:35"));
         assertTrue(filetered.contains("customer-5:Charlie Wilson:42"));
 
         // Test chaining operations
-        List<String> mappedAndFiltered = rdd
+        CompletableFuture<List<String>> chainedFuture = rdd
             .map(line -> new String(line).split(":")[2])
             .filter(age -> Integer.parseInt(age) > 30)
             .collect();
+        minispark.util.TestUtils.runUntil(messageBus, () -> chainedFuture.isDone(), java.time.Duration.ofSeconds(5));
+        List<String> mappedAndFiltered = chainedFuture.get();
         assertEquals(2, mappedAndFiltered.size());
         assertTrue(mappedAndFiltered.contains("35"));
         assertTrue(mappedAndFiltered.contains("42"));

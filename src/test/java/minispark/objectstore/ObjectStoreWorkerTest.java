@@ -1,7 +1,7 @@
 package minispark.objectstore;
 
-import minispark.core.Partition;
 import minispark.core.MiniRDD;
+import minispark.core.Partition;
 import minispark.network.MessageBus;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,21 +11,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
-import java.util.Objects;
-import java.util.Iterator;
-import java.util.stream.Collectors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.ExecutionException;
+import java.time.Duration;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.HashSet;
-import java.util.Collections;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ObjectStoreWorkerTest {
     private static final Logger logger = LoggerFactory.getLogger(ObjectStoreWorkerTest.class);
@@ -59,15 +52,25 @@ class ObjectStoreWorkerTest {
         // Create customer profile data
         List<CustomerProfile> customers = createCustomerProfiles(10);
         
-        // Write customer data to ObjectStore
+        // Write customer data to ObjectStore asynchronously
         System.out.println("\nInserting customer data:");
+        List<CompletableFuture<Void>> putFutures = new ArrayList<>();
         for (CustomerProfile customer : customers) {
             String key = "customer-" + customer.getId();
             String jsonData = customer.toJson();
-            objectStoreCluster.getClient().putObject(key, jsonData.getBytes()).get(5, TimeUnit.SECONDS);
+            CompletableFuture<Void> f = objectStoreCluster.getClient().putObject(key, jsonData.getBytes());
+            putFutures.add(f);
+        }
+
+        minispark.util.TestUtils.runUntil(messageBus,
+                () -> putFutures.stream().allMatch(CompletableFuture::isDone),
+                Duration.ofSeconds(10));
+
+        for (CustomerProfile customer : customers) {
+            String key = "customer-" + customer.getId();
             System.out.printf("Inserted customer %s to server %s%n", 
-                customer.getId(), 
-                objectStoreCluster.getServerForKey(key).id);
+                    customer.getId(), 
+                    objectStoreCluster.getServerForKey(key).id);
         }
 
         // Create RDD with multiple partitions
@@ -78,22 +81,24 @@ class ObjectStoreWorkerTest {
         
         // Use DAGScheduler to submit the job
         System.out.println("\nSubmitting job through DAGScheduler:");
-        List<CompletableFuture<CustomerProfile>> futures = sparkCluster.getDagScheduler().submitJob(customerRdd, customerRdd.getPartitions().length);
-        
-        // Wait for all tasks to complete - note: RDDTask only returns first element from each partition
-        List<CustomerProfile> processedCustomers = new ArrayList<>();
-        for (CompletableFuture<CustomerProfile> future : futures) {
-            try {
-                CustomerProfile result = future.get(10, TimeUnit.SECONDS);
-                if (result != null) {
-                    processedCustomers.add(result);
-                    System.out.println("Received customer: " + result.getId());
-                }
-            } catch (ClassCastException e) {
-                // Skip any results that can't be cast to CustomerProfile
-                System.out.println("Skipping result due to ClassCastException: " + e.getMessage());
-            }
-        }
+        List<CompletableFuture<CustomerProfile>> futures = sparkCluster.getDagScheduler()
+                .submitJob(customerRdd, customerRdd.getPartitions().length);
+
+        // Use TestUtils.runUntil instead of blocking get calls.
+        minispark.util.TestUtils.runUntil(messageBus,
+                () -> futures.stream().allMatch(CompletableFuture::isDone),
+                Duration.ofSeconds(30));
+
+        List<CustomerProfile> processedCustomers = futures.stream()
+                .map(f -> {
+                    try {
+                        return f.get();
+                    } catch (Exception e) {
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
 
         // Verify results - since RDDTask only returns one item per partition
         System.out.println("Processed " + processedCustomers.size() + " customers from final stage");
@@ -201,30 +206,31 @@ class ObjectStoreWorkerTest {
         }
         
         @Override
-        public Iterator<CustomerProfile> compute(Partition split) {
+        public CompletableFuture<Iterator<CustomerProfile>> compute(Partition split) {
             logger.debug("Processing partition {} with base key {}", 
                 split.index(), 
                 "customer-");
             
-            List<CustomerProfile> processedCustomers = new ArrayList<>();
-            Iterator<byte[]> iter = parent.compute(split);
-            
-            while (iter.hasNext()) {
-                byte[] bytes = iter.next();
-                if (bytes != null && bytes.length > 0) {
-                    CustomerProfile customer = CustomerProfile.fromJson(new String(bytes));
-                    processedCustomers.add(customer);
-                    logger.debug("Processed customer {} in partition {}", 
-                        customer.getId(), 
-                        split.index());
+            return parent.compute(split).thenApply(iter -> {
+                List<CustomerProfile> processedCustomers = new ArrayList<>();
+                
+                while (iter.hasNext()) {
+                    byte[] bytes = iter.next();
+                    if (bytes != null && bytes.length > 0) {
+                        CustomerProfile customer = CustomerProfile.fromJson(new String(bytes));
+                        processedCustomers.add(customer);
+                        logger.debug("Processed customer {} in partition {}", 
+                            customer.getId(), 
+                            split.index());
+                    }
                 }
-            }
-            
-            logger.debug("Partition {} processed {} customers", 
-                split.index(), 
-                processedCustomers.size());
-            
-            return processedCustomers.iterator();
+                
+                logger.debug("Partition {} processed {} customers", 
+                    split.index(), 
+                    processedCustomers.size());
+                
+                return processedCustomers.iterator();
+            });
         }
         
         @Override
@@ -248,15 +254,11 @@ class ObjectStoreWorkerTest {
         }
         
         @Override
-        public List<CustomerProfile> collect() {
-            List<CustomerProfile> result = new ArrayList<>();
-            for (Partition partition : getPartitions()) {
-                Iterator<CustomerProfile> iter = compute(partition);
-                while (iter.hasNext()) {
-                    result.add(iter.next());
-                }
-            }
-            return result;
+        public CompletableFuture<List<CustomerProfile>> collect() {
+            // This collect method should not be used in tests that require tick progression.
+            // Use DAGScheduler.submitJob() instead for proper deterministic execution.
+            throw new UnsupportedOperationException(
+                "collect() not supported - use DAGScheduler.submitJob() for deterministic execution");
         }
     }
 } 

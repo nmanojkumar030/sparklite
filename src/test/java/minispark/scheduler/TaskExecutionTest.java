@@ -38,12 +38,10 @@ class TaskExecutionTest {
         worker1.start();
         worker2.start();
 
-        // Wait for workers to register
-        try {
-            Thread.sleep(500);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // Wait for workers to register using tick progression
+        minispark.util.TestUtils.runUntil(messageBus, 
+            () -> taskScheduler.getNumWorkers() >= 2, 
+            java.time.Duration.ofSeconds(5));
     }
 
     @AfterEach
@@ -65,9 +63,12 @@ class TaskExecutionTest {
         List<CompletableFuture<Integer>> futures = taskScheduler.submitTasks(tasks, 1);
         assertEquals(2, futures.size());
 
-        // Wait for results
-        Integer result1 = futures.get(0).get(5, TimeUnit.SECONDS);
-        Integer result2 = futures.get(1).get(5, TimeUnit.SECONDS);
+        // Wait for results with tick progression
+        minispark.util.TestUtils.runUntil(messageBus, () -> futures.get(0).isDone(), java.time.Duration.ofSeconds(5));
+        minispark.util.TestUtils.runUntil(messageBus, () -> futures.get(1).isDone(), java.time.Duration.ofSeconds(5));
+        
+        Integer result1 = futures.get(0).get();
+        Integer result2 = futures.get(1).get();
 
         // Verify results
         assertEquals(5, result1);
@@ -84,11 +85,24 @@ class TaskExecutionTest {
         List<CompletableFuture<Integer>> futures = taskScheduler.submitTasks(tasks, 1);
         assertEquals(1, futures.size());
 
+        // Wait for completion with tick progression
+        minispark.util.TestUtils.runUntil(messageBus, () -> futures.get(0).isDone(), java.time.Duration.ofSeconds(5));
+
         // Verify that the task fails with the expected exception
         Exception exception = assertThrows(Exception.class, () -> {
-            futures.get(0).get(5, TimeUnit.SECONDS);
+            futures.get(0).get();
         });
-        assertTrue(exception.getCause() instanceof IllegalArgumentException);
+        
+        // The original IllegalArgumentException is now wrapped in multiple layers:
+        // ExecutionException -> RuntimeException -> ExecutionException -> IllegalArgumentException
+        Throwable cause = exception.getCause(); // RuntimeException
+        if (cause != null) {
+            cause = cause.getCause(); // ExecutionException
+        }
+        if (cause != null) {
+            cause = cause.getCause(); // IllegalArgumentException
+        }
+        assertTrue(cause instanceof IllegalArgumentException);
     }
 
     /**
@@ -103,11 +117,11 @@ class TaskExecutionTest {
         }
 
         @Override
-        public Integer execute(Partition partition) {
+        public CompletableFuture<Integer> execute(Partition partition) {
             if (input < 0) {
-                throw new IllegalArgumentException("Input cannot be negative");
+                return CompletableFuture.failedFuture(new IllegalArgumentException("Input cannot be negative"));
             }
-            return input;
+            return CompletableFuture.completedFuture(input);
         }
     }
 } 

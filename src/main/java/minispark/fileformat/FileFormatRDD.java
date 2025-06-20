@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -57,9 +58,9 @@ public class FileFormatRDD<T> implements MiniRDD<T> {
     }
     
     @Override
-    public Iterator<T> compute(Partition split) {
+    public CompletableFuture<Iterator<T>> compute(Partition split) {
         if (!(split instanceof FilePartition)) {
-            throw new IllegalArgumentException("Expected FilePartition but got " + split.getClass().getName());
+            return CompletableFuture.failedFuture(new IllegalArgumentException("Expected FilePartition but got " + split.getClass().getName()));
         }
         
         FilePartition filePartition = (FilePartition) split;
@@ -67,11 +68,12 @@ public class FileFormatRDD<T> implements MiniRDD<T> {
             split.index(), filePartition.getFilePath(), formatReader.getFormatName());
         
         try {
-            return formatReader.readPartition(filePath, filePartition);
+            Iterator<T> result = formatReader.readPartition(filePath, filePartition);
+            return CompletableFuture.completedFuture(result);
         } catch (Exception e) {
             logger.error("Failed to read partition {} from file {}: {}", 
                 split.index(), filePath, e.getMessage(), e);
-            throw new RuntimeException("Failed to read partition " + split.index(), e);
+            return CompletableFuture.failedFuture(new RuntimeException("Failed to read partition " + split.index(), e));
         }
     }
     
@@ -101,15 +103,28 @@ public class FileFormatRDD<T> implements MiniRDD<T> {
     }
     
     @Override
-    public List<T> collect() {
-        List<T> result = new ArrayList<>();
+    public CompletableFuture<List<T>> collect() {
+        List<CompletableFuture<Iterator<T>>> futures = new ArrayList<>();
+        
         for (Partition partition : getPartitions()) {
-            Iterator<T> iter = compute(partition);
-            while (iter.hasNext()) {
-                result.add(iter.next());
-            }
+            futures.add(compute(partition));
         }
-        return result;
+        
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .thenApply(v -> {
+                List<T> result = new ArrayList<>();
+                for (CompletableFuture<Iterator<T>> future : futures) {
+                    try {
+                        Iterator<T> iter = future.get();
+                        while (iter.hasNext()) {
+                            result.add(iter.next());
+                        }
+                    } catch (Exception e) {
+                        throw new RuntimeException("Failed to get partition result", e);
+                    }
+                }
+                return result;
+            });
     }
     
     /**

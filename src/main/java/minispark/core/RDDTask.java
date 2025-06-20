@@ -3,6 +3,7 @@ package minispark.core;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * A task that executes a partition of an RDD and returns the results.
@@ -19,17 +20,21 @@ public class RDDTask<T> extends Task<T, T> {
     }
 
     @Override
-    public T execute(Partition partition) {
-        // Use the partition to compute RDD results
-        Iterator<T> iterator = rdd.compute(partition);
-        List<T> results = new ArrayList<>();
+    public CompletableFuture<T> execute(Partition partition) {
+        // Use the partition to compute RDD results - this returns a CompletableFuture
+        CompletableFuture<Iterator<T>> futureIterator = rdd.compute(partition);
         
-        // Collect all results from this partition
-        while (iterator.hasNext()) {
-            results.add(iterator.next());
-        }
-        
-        // Return the first result (this is a simplification)
-        return results.isEmpty() ? null : results.get(0);
+        // Transform the future to return the result instead of blocking
+        return futureIterator.thenApply(iterator -> {
+            List<T> results = new ArrayList<>();
+            
+            // Collect all results from this partition
+            while (iterator.hasNext()) {
+                results.add(iterator.next());
+            }
+            
+            // Return the first result (this is a simplification)
+            return results.isEmpty() ? null : results.get(0);
+        });
     }
 } 

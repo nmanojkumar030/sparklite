@@ -3,19 +3,21 @@ package minispark.objectstore;
 import minispark.MiniSparkContext;
 import minispark.network.MessageBus;
 import minispark.network.NetworkEndpoint;
+import minispark.util.TestUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.Objects;
 import java.io.Serializable;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.CompletableFuture;
 import java.util.HashSet;
 
@@ -73,10 +75,10 @@ class ObjectStorePartitioningTest {
         // Insert the customer data
         String key = "customer-" + customer.getId();
         String jsonData = customer.toJson();
-        client.putObject(key, jsonData.getBytes()).get(5, TimeUnit.SECONDS);
-
+        runUntilDone(client.putObject(key, jsonData.getBytes()));
         // Verify the data was inserted correctly
-        byte[] retrievedData = client.getObject(key).get(5, TimeUnit.SECONDS);
+        CompletableFuture<byte[]> getFuture = runUntilDone(client.getObject(key));
+        byte[] retrievedData = getFuture.get();
         String retrievedJson = new String(retrievedData);
         CustomerProfile retrievedCustomer = CustomerProfile.fromJson(retrievedJson);
         
@@ -93,22 +95,39 @@ class ObjectStorePartitioningTest {
         }
     }
 
+    private void runUntilDone(List<Future> f) {
+        TestUtils.runUntil(messageBus,
+            () -> f.stream().allMatch(Future::isDone),
+            Duration.ofSeconds(10));
+
+    }
+    private <T> CompletableFuture<T> runUntilDone(CompletableFuture<T> putFuture) {
+        TestUtils.runUntil(messageBus,
+            () -> putFuture.isDone(),
+            Duration.ofSeconds(10));
+        return putFuture;
+    }
+
     @Test
     void testBatchObjectInsertion() throws Exception {
         // Create multiple customer profiles
         List<CustomerProfile> customers = createCustomerProfiles(5);
-        
+
+        List<Future> futures = new ArrayList<>();
         // Insert all customers
         for (CustomerProfile customer : customers) {
             String key = "customer-" + customer.getId();
             String jsonData = customer.toJson();
-            client.putObject(key, jsonData.getBytes()).get(5, TimeUnit.SECONDS);
+            futures.add(client.putObject(key, jsonData.getBytes()));
         }
+
+        runUntilDone(futures);
 
         // Verify all customers were inserted correctly
         for (CustomerProfile customer : customers) {
             String key = "customer-" + customer.getId();
-            byte[] retrievedData = client.getObject(key).get(5, TimeUnit.SECONDS);
+            CompletableFuture<byte[]> getFuture = runUntilDone(client.getObject(key));
+            byte[] retrievedData = getFuture.get();
             String retrievedJson = new String(retrievedData);
             CustomerProfile retrievedCustomer = CustomerProfile.fromJson(retrievedJson);
             assertEquals(customer, retrievedCustomer, "Retrieved customer should match inserted customer");
@@ -131,7 +150,7 @@ class ObjectStorePartitioningTest {
         List<CustomerProfile> customers = createCustomerProfiles(10);
         
         // Insert all customers concurrently
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        List<Future> futures = new ArrayList<>();
         for (CustomerProfile customer : customers) {
             String key = "customer-" + customer.getId();
             String jsonData = customer.toJson();
@@ -139,13 +158,13 @@ class ObjectStorePartitioningTest {
         }
 
         // Wait for all insertions to complete
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-            .get(10, TimeUnit.SECONDS);
+        runUntilDone(futures);
 
         // Verify all customers were inserted correctly
         for (CustomerProfile customer : customers) {
             String key = "customer-" + customer.getId();
-            byte[] retrievedData = client.getObject(key).get(5, TimeUnit.SECONDS);
+            CompletableFuture<byte[]> getFuture = runUntilDone(client.getObject(key));
+            byte[] retrievedData = getFuture.get();
             String retrievedJson = new String(retrievedData);
             CustomerProfile retrievedCustomer = CustomerProfile.fromJson(retrievedJson);
             assertEquals(customer, retrievedCustomer, "Retrieved customer should match inserted customer");
@@ -168,16 +187,21 @@ class ObjectStorePartitioningTest {
         List<CustomerProfile> customers = createCustomerProfiles(20);
         
         // Write customer data to ObjectStore
+        List<Future> futures = new ArrayList<>();
         for (CustomerProfile customer : customers) {
             String key = "customer-" + customer.getId();
-            client.putObject(key, customer.toJson().getBytes()).get(5, TimeUnit.SECONDS);
+            futures.add(client.putObject(key, customer.toJson().getBytes()));
         }
+
+        runUntilDone(futures);
 
         // Create RDD to read the data
         ObjectStoreRDD rdd = new ObjectStoreRDD(sc, client, "customer-", 2);
 
         // Collect and verify data
-        List<byte[]> result = rdd.collect();
+        CompletableFuture<List<byte[]>> collectFuture = rdd.collect();
+        minispark.util.TestUtils.runUntil(messageBus, () -> collectFuture.isDone(), java.time.Duration.ofSeconds(10));
+        List<byte[]> result = collectFuture.get();
         assertEquals(20, result.size());
 
         // Convert byte arrays back to CustomerProfile objects

@@ -197,12 +197,20 @@ class DAGSchedulerTest {
                             // Get the partition and compute the result
                             Partition[] partitions = rdd.getPartitions();
                             if (partitionId < partitions.length) {
-                                Iterator<?> resultIter = rdd.compute(partitions[partitionId]);
-                                if (resultIter.hasNext()) {
-                                    completeCompletableFuture(future, resultIter.next());
-                                } else {
-                                    completeCompletableFuture(future, null); // Empty result
-                                }
+                                CompletableFuture<?> futureIter = rdd.compute(partitions[partitionId]);
+                                // Don't block - use thenApply to handle the result asynchronously
+                                futureIter.thenApply(resultIter -> {
+                                    Iterator<?> iter = (Iterator<?>) resultIter;
+                                    if (iter.hasNext()) {
+                                        completeCompletableFuture(future, iter.next());
+                                    } else {
+                                        completeCompletableFuture(future, null); // Empty result
+                                    }
+                                    return null;
+                                }).exceptionally(throwable -> {
+                                    future.completeExceptionally(throwable);
+                                    return null;
+                                });
                             } else {
                                 completeCompletableFuture(future, null); // Partition index out of bounds
                             }
@@ -304,8 +312,8 @@ class DAGSchedulerTest {
         }
 
         @Override
-        public Iterator<Integer> compute(Partition split) {
-            return List.of(split.index()).iterator();
+        public CompletableFuture<Iterator<Integer>> compute(Partition split) {
+            return CompletableFuture.completedFuture(List.of(split.index()).iterator());
         }
 
         @Override
@@ -329,15 +337,28 @@ class DAGSchedulerTest {
         }
 
         @Override
-        public List<Integer> collect() {
-            List<Integer> result = new ArrayList<>();
+        public CompletableFuture<List<Integer>> collect() {
+            List<CompletableFuture<Iterator<Integer>>> futures = new ArrayList<>();
+            
             for (Partition partition : getPartitions()) {
-                Iterator<Integer> iter = compute(partition);
-                while (iter.hasNext()) {
-                    result.add(iter.next());
-                }
+                futures.add(compute(partition));
             }
-            return result;
+            
+            return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .thenApply(v -> {
+                    List<Integer> result = new ArrayList<>();
+                    for (CompletableFuture<Iterator<Integer>> future : futures) {
+                        try {
+                            Iterator<Integer> iter = future.join(); // Use join() instead of get() - it's non-blocking here since allOf already completed
+                            while (iter.hasNext()) {
+                                result.add(iter.next());
+                            }
+                        } catch (Exception e) {
+                            throw new RuntimeException("Failed to get partition result", e);
+                        }
+                    }
+                    return result;
+                });
         }
     }
 
@@ -357,13 +378,14 @@ class DAGSchedulerTest {
         }
 
         @Override
-        public Iterator<R> compute(Partition split) {
-            Iterator<T> parentIter = parent.compute(split);
-            List<R> results = new ArrayList<>();
-            while (parentIter.hasNext()) {
-                results.add(mapFunction.apply(parentIter.next()));
-            }
-            return results.iterator();
+        public CompletableFuture<Iterator<R>> compute(Partition split) {
+            return parent.compute(split).thenApply(parentIter -> {
+                List<R> results = new ArrayList<>();
+                while (parentIter.hasNext()) {
+                    results.add(mapFunction.apply(parentIter.next()));
+                }
+                return results.iterator();
+            });
         }
 
         @Override
@@ -387,15 +409,28 @@ class DAGSchedulerTest {
         }
 
         @Override
-        public List<R> collect() {
-            List<R> result = new ArrayList<>();
+        public CompletableFuture<List<R>> collect() {
+            List<CompletableFuture<Iterator<R>>> futures = new ArrayList<>();
+            
             for (Partition partition : getPartitions()) {
-                Iterator<R> iter = compute(partition);
-                while (iter.hasNext()) {
-                    result.add(iter.next());
-                }
+                futures.add(compute(partition));
             }
-            return result;
+            
+            return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .thenApply(v -> {
+                    List<R> result = new ArrayList<>();
+                    for (CompletableFuture<Iterator<R>> future : futures) {
+                        try {
+                            Iterator<R> iter = future.join(); // Use join() instead of get() - it's non-blocking here since allOf already completed
+                            while (iter.hasNext()) {
+                                result.add(iter.next());
+                            }
+                        } catch (Exception e) {
+                            throw new RuntimeException("Failed to get partition result", e);
+                        }
+                    }
+                    return result;
+                });
         }
     }
 
@@ -415,16 +450,17 @@ class DAGSchedulerTest {
         }
 
         @Override
-        public Iterator<T> compute(Partition split) {
-            Iterator<T> parentIter = parent.compute(split);
-            List<T> results = new ArrayList<>();
-            while (parentIter.hasNext()) {
-                T item = parentIter.next();
-                if (filterPredicate.test(item)) {
-                    results.add(item);
+        public CompletableFuture<Iterator<T>> compute(Partition split) {
+            return parent.compute(split).thenApply(parentIter -> {
+                List<T> results = new ArrayList<>();
+                while (parentIter.hasNext()) {
+                    T item = parentIter.next();
+                    if (filterPredicate.test(item)) {
+                        results.add(item);
+                    }
                 }
-            }
-            return results.iterator();
+                return results.iterator();
+            });
         }
 
         @Override
@@ -448,15 +484,28 @@ class DAGSchedulerTest {
         }
 
         @Override
-        public List<T> collect() {
-            List<T> result = new ArrayList<>();
+        public CompletableFuture<List<T>> collect() {
+            List<CompletableFuture<Iterator<T>>> futures = new ArrayList<>();
+            
             for (Partition partition : getPartitions()) {
-                Iterator<T> iter = compute(partition);
-                while (iter.hasNext()) {
-                    result.add(iter.next());
-                }
+                futures.add(compute(partition));
             }
-            return result;
+            
+            return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .thenApply(v -> {
+                    List<T> result = new ArrayList<>();
+                    for (CompletableFuture<Iterator<T>> future : futures) {
+                        try {
+                            Iterator<T> iter = future.join(); // Use join() instead of get() - it's non-blocking here since allOf already completed
+                            while (iter.hasNext()) {
+                                result.add(iter.next());
+                            }
+                        } catch (Exception e) {
+                            throw new RuntimeException("Failed to get partition result", e);
+                        }
+                    }
+                    return result;
+                });
         }
     }
 } 

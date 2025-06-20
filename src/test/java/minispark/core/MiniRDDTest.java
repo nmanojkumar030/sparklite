@@ -17,26 +17,26 @@ class MiniRDDTest {
     }
     
     @Test
-    void shouldTransformDataUsingMapAndFilter() {
+    void shouldTransformDataUsingMapAndFilter() throws Exception {
         List<Integer> data = Arrays.asList(1, 2, 3, 4, 5);
         MiniRDD<Integer> rdd = sc.parallelize(data);
         
         List<String> result = rdd
             .filter(num -> num % 2 == 0)
             .map(String::valueOf)
-            .collect();
+            .collect().get();
             
         assertEquals(Arrays.asList("2", "4"), result);
     }
 
     @Test
-    void shouldHandleEmptyRDD() {
+    void shouldHandleEmptyRDD() throws Exception {
         List<Integer> data = new ArrayList<>();
         MiniRDD<Integer> rdd = sc.parallelize(data);
         
         List<Integer> result = rdd
             .filter(x -> x > 0)
-            .collect();
+            .collect().get();
             
         assertTrue(result.isEmpty());
     }
@@ -61,7 +61,7 @@ class MiniRDDTest {
     }
 
     @Test
-    void shouldPreserveTransformationOrder() {
+    void shouldPreserveTransformationOrder() throws Exception {
         List<Integer> data = Arrays.asList(1, 2, 3, 4, 5);
         MiniRDD<Integer> rdd = sc.parallelize(data);
         
@@ -69,26 +69,26 @@ class MiniRDDTest {
             .map(x -> x * 2)      // [2, 4, 6, 8, 10]
             .filter(x -> x > 5)   // [6, 8, 10]
             .map(x -> x / 2)      // [3, 4, 5]
-            .collect();
+            .collect().get();
             
         assertEquals(Arrays.asList(3, 4, 5), result);
     }
 
     @Test
-    void shouldHandleNullValues() {
+    void shouldHandleNullValues() throws Exception {
         List<String> data = Arrays.asList("a", null, "b", null, "c");
         MiniRDD<String> rdd = sc.parallelize(data);
         
         List<String> result = rdd
             .filter(s -> s != null)
             .map(String::toUpperCase)
-            .collect();
+            .collect().get();
             
         assertEquals(Arrays.asList("A", "B", "C"), result);
     }
 
     @Test
-    void shouldChainMultipleFilters() {
+    void shouldChainMultipleFilters() throws Exception {
         List<Integer> data = Arrays.asList(1, 2, 3, 4, 5, 6);
         MiniRDD<Integer> rdd = sc.parallelize(data);
         
@@ -96,7 +96,7 @@ class MiniRDDTest {
             .filter(x -> x % 2 == 0)  // [2, 4, 6]
             .filter(x -> x > 2)       // [4, 6]
             .filter(x -> x < 6)       // [4]
-            .collect();
+            .collect().get();
             
         assertEquals(Arrays.asList(4), result);
     }

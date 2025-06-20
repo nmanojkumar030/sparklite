@@ -9,8 +9,10 @@ import minispark.worker.Worker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 /**
  * Manages a Spark cluster for testing purposes, including workers and schedulers.
@@ -51,17 +53,11 @@ public class SparkCluster implements AutoCloseable {
         messageBus.start();
         taskScheduler.start();
         workers.forEach(Worker::start);
-        
-        // Wait for workers to register
-        try {
-            Thread.sleep(500);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        
+        minispark.util.TestUtils.runUntil(messageBus,
+                () -> taskScheduler.getNumWorkers() == workers.size());
         logger.info("Started Spark cluster with {} workers", workers.size());
     }
-    
+
     public void stop() {
         workers.forEach(Worker::stop);
         taskScheduler.stop();

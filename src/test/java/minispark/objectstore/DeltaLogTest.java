@@ -97,11 +97,20 @@ class DeltaLogTest {
             
             // Store the JSON log
             byte[] logData = objectMapper.writeValueAsBytes(transactionLog);
-            client.putObject(logPath, logData).join();
+            CompletableFuture<Void> putFuture = client.putObject(logPath, logData);
+            
+            // Use tick progression instead of blocking join()
+            minispark.util.TestUtils.runUntil(messageBus,
+                () -> putFuture.isDone(),
+                java.time.Duration.ofSeconds(5));
             
             // Verify the log was stored
             CompletableFuture<byte[]> futureData = client.getObject(logPath);
-            byte[] storedData = futureData.join();
+            minispark.util.TestUtils.runUntil(messageBus,
+                () -> futureData.isDone(),
+                java.time.Duration.ofSeconds(5));
+            
+            byte[] storedData = futureData.join(); // Safe to join() after isDone() is true
             
             assertNotNull(storedData);
             String storedJson = new String(storedData, StandardCharsets.UTF_8);
@@ -115,7 +124,11 @@ class DeltaLogTest {
         // Verify all logs can be retrieved in order
         for (String logPath : logFiles) {
             CompletableFuture<byte[]> futureData = client.getObject(logPath);
-            byte[] data = futureData.join();
+            minispark.util.TestUtils.runUntil(messageBus,
+                () -> futureData.isDone(),
+                java.time.Duration.ofSeconds(5));
+            
+            byte[] data = futureData.join(); // Safe to join() after isDone() is true
             assertNotNull(data, "Log file should exist: " + logPath);
             
             ObjectNode logEntry = (ObjectNode) objectMapper.readTree(data);

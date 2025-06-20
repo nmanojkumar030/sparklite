@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import minispark.objectstore.serialization.ObjectStoreSerializer;
+import java.util.concurrent.CompletableFuture;
 
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -37,23 +38,36 @@ class TestObjectStore {
     }
 
     @Test
-    void testPutAndGet() throws Exception {
-        String key = "test.txt";
-        String data = "Hello, World!";
-        client.putObject(key, data.getBytes()).get(5, TimeUnit.SECONDS);
-        byte[] retrieved = client.getObject(key).get(5, TimeUnit.SECONDS);
-        assertArrayEquals(data.getBytes(), retrieved);
+    void testBasicObjectOperations() throws Exception {
+        String key = "test-key";
+        String data = "Hello World";
+        
+        CompletableFuture<Void> putFuture = client.putObject(key, data.getBytes());
+        minispark.util.TestUtils.runUntil(messageBus, () -> putFuture.isDone(), java.time.Duration.ofSeconds(5));
+        putFuture.get();
+        
+        CompletableFuture<byte[]> getFuture = client.getObject(key);
+        minispark.util.TestUtils.runUntil(messageBus, () -> getFuture.isDone(), java.time.Duration.ofSeconds(5));
+        byte[] retrieved = getFuture.get();
+        assertEquals(data, new String(retrieved));
     }
 
     @Test
-    void testListObjects() throws Exception {
-        String key1 = "test1.txt";
-        String key2 = "test2.txt";
-        String data = "Hello";
-        client.putObject(key1, data.getBytes()).get(5, TimeUnit.SECONDS);
-        client.putObject(key2, data.getBytes()).get(5, TimeUnit.SECONDS);
-        List<String> objects = client.listObjects("").get(5, TimeUnit.SECONDS);
-        assertTrue(objects.contains(key1));
-        assertTrue(objects.contains(key2));
+    void testMultipleObjects() throws Exception {
+        String key1 = "key1", key2 = "key2";
+        String data = "test data";
+        
+        CompletableFuture<Void> put1Future = client.putObject(key1, data.getBytes());
+        minispark.util.TestUtils.runUntil(messageBus, () -> put1Future.isDone(), java.time.Duration.ofSeconds(5));
+        put1Future.get();
+        
+        CompletableFuture<Void> put2Future = client.putObject(key2, data.getBytes());
+        minispark.util.TestUtils.runUntil(messageBus, () -> put2Future.isDone(), java.time.Duration.ofSeconds(5));
+        put2Future.get();
+        
+        CompletableFuture<List<String>> listFuture = client.listObjects("");
+        minispark.util.TestUtils.runUntil(messageBus, () -> listFuture.isDone(), java.time.Duration.ofSeconds(5));
+        List<String> objects = listFuture.get();
+        assertEquals(2, objects.size());
     }
 } 

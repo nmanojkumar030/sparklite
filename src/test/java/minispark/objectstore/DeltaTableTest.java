@@ -164,10 +164,20 @@ class DeltaTableTest {
         
         // Create parent directories in the object store
         String parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
-        client.putObject(parentPath + "/.keep", new byte[0]).join(); // Create parent directory
+        CompletableFuture<Void> parentFuture = client.putObject(parentPath + "/.keep", new byte[0]);
+        
+        // Use tick progression instead of blocking join()
+        minispark.util.TestUtils.runUntil(messageBus,
+            () -> parentFuture.isDone(),
+            java.time.Duration.ofSeconds(5));
         
         // Store the actual file
-        client.putObject(filePath, parquetData).join(); // Wait for the operation to complete
+        CompletableFuture<Void> fileFuture = client.putObject(filePath, parquetData);
+        
+        // Use tick progression instead of blocking join()
+        minispark.util.TestUtils.runUntil(messageBus,
+            () -> fileFuture.isDone(),
+            java.time.Duration.ofSeconds(5));
         
         // Clean up
         tempFile.delete();
@@ -202,7 +212,13 @@ class DeltaTableTest {
     private void verifyCustomerStorage(Map<String, Object> customer, String filePath) {
         // Verify the customer data exists
         CompletableFuture<byte[]> futureData = client.getObject(filePath);
-        byte[] data = futureData.join(); // Wait for the future to complete
+        
+        // Use tick progression instead of blocking join()
+        minispark.util.TestUtils.runUntil(messageBus,
+            () -> futureData.isDone(),
+            java.time.Duration.ofSeconds(5));
+        
+        byte[] data = futureData.join(); // Safe to join() after isDone() is true
         assertNotNull(data, "Customer data should exist");
         assertTrue(data.length > 0, "Customer data should not be empty");
         

@@ -1,6 +1,7 @@
 package minispark.core;
 
 import java.io.Serializable;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Abstract base class for tasks that can be executed on workers.
@@ -24,9 +25,9 @@ public abstract class Task<I, O> implements Serializable {
      * Execute the task on the given partition.
      *
      * @param partition The partition to execute on
-     * @return The result of the task execution
+     * @return A CompletableFuture containing the result of the task execution
      */
-    public abstract O execute(Partition partition);
+    public abstract CompletableFuture<O> execute(Partition partition);
 
     public int getTaskId() {
         return taskId;

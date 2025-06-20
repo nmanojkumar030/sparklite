@@ -3,6 +3,7 @@ package minispark.core.transformations;
 import minispark.core.MiniRDD;
 import minispark.core.Partition;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -23,39 +24,40 @@ public class FilterRDD<T> implements MiniRDD<T> {
     }
 
     @Override
-    public Iterator<T> compute(Partition split) {
-        Iterator<T> parentIter = parent.compute(split);
-        return new Iterator<T>() {
-            private T nextElement = null;
-            private boolean hasNext = false;
+    public CompletableFuture<Iterator<T>> compute(Partition split) {
+        return parent.compute(split).thenApply(parentIter -> {
+            return new Iterator<T>() {
+                private T nextElement = null;
+                private boolean hasNext = false;
 
-            private void findNext() {
-                while (!hasNext && parentIter.hasNext()) {
-                    T element = parentIter.next();
-                    if (predicate.test(element)) {
-                        nextElement = element;
-                        hasNext = true;
+                private void findNext() {
+                    while (!hasNext && parentIter.hasNext()) {
+                        T element = parentIter.next();
+                        if (predicate.test(element)) {
+                            nextElement = element;
+                            hasNext = true;
+                        }
                     }
                 }
-            }
 
-            @Override
-            public boolean hasNext() {
-                if (!hasNext) {
-                    findNext();
+                @Override
+                public boolean hasNext() {
+                    if (!hasNext) {
+                        findNext();
+                    }
+                    return hasNext;
                 }
-                return hasNext;
-            }
 
-            @Override
-            public T next() {
-                if (!hasNext()) {
-                    throw new NoSuchElementException();
+                @Override
+                public T next() {
+                    if (!hasNext()) {
+                        throw new NoSuchElementException();
+                    }
+                    hasNext = false;
+                    return nextElement;
                 }
-                hasNext = false;
-                return nextElement;
-            }
-        };
+            };
+        });
     }
 
     @Override
@@ -79,14 +81,27 @@ public class FilterRDD<T> implements MiniRDD<T> {
     }
 
     @Override
-    public List<T> collect() {
-        List<T> result = new ArrayList<>();
+    public CompletableFuture<List<T>> collect() {
+        List<CompletableFuture<Iterator<T>>> futures = new ArrayList<>();
+        
         for (Partition partition : getPartitions()) {
-            Iterator<T> iter = compute(partition);
-            while (iter.hasNext()) {
-                result.add(iter.next());
-            }
+            futures.add(compute(partition));
         }
-        return result;
+        
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .thenApply(v -> {
+                List<T> result = new ArrayList<>();
+                for (CompletableFuture<Iterator<T>> future : futures) {
+                    try {
+                        Iterator<T> iter = future.get();
+                        while (iter.hasNext()) {
+                            result.add(iter.next());
+                        }
+                    } catch (Exception e) {
+                        throw new RuntimeException("Failed to get partition result", e);
+                    }
+                }
+                return result;
+            });
     }
 } 

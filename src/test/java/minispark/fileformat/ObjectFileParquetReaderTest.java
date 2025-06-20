@@ -17,6 +17,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import minispark.objectstore.Client;
@@ -139,7 +141,24 @@ class ObjectFileParquetReaderTest {
             
             // Act: Create partitions (this triggers footer reading with range requests)
             System.out.println("📋 Step 2: Creating partitions (reading footer)...");
-            FilePartition[] partitions = objectFileReader.createPartitions(objectStoreKey, DEFAULT_TARGET_PARTITIONS);
+            
+            // Since createPartitions makes blocking calls to object store, we need to run it in a separate thread
+            // and drive ticks until it completes
+            CompletableFuture<FilePartition[]> partitionsFuture = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return objectFileReader.createPartitions(objectStoreKey, DEFAULT_TARGET_PARTITIONS);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            
+            minispark.util.TestUtils.runUntil(messageBus, () -> partitionsFuture.isDone(), java.time.Duration.ofSeconds(10));
+            FilePartition[] partitions;
+            try {
+                partitions = partitionsFuture.get();
+            } catch (InterruptedException | ExecutionException e) {
+                throw new IOException("Failed to create partitions", e);
+            }
             System.out.println("✅ Partitions created successfully");
             
             // Assert: Verify successful metadata extraction from object store
@@ -213,7 +232,9 @@ class ObjectFileParquetReaderTest {
         try {
             System.out.printf("📤 Uploading to object store: %s (%d customers, %d bytes)%n", 
                 objectStoreKey, customers.length, fileData.length);
-            objectStoreClient.putObject(objectStoreKey, fileData).get(10, java.util.concurrent.TimeUnit.SECONDS);
+            CompletableFuture<Void> putFuture = objectStoreClient.putObject(objectStoreKey, fileData);
+            minispark.util.TestUtils.runUntil(messageBus, () -> putFuture.isDone(), java.time.Duration.ofSeconds(10));
+            putFuture.get();
             System.out.println("✅ Upload completed successfully");
         } catch (Exception e) {
             System.err.println("❌ Upload failed: " + e.getMessage());

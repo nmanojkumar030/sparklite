@@ -76,20 +76,23 @@ class HashRingRoutingTest {
         logger.info("Key '{}' mapped to server {}", key1, server1);
         logger.info("Key '{}' mapped to server {}", key2, server2);
 
-        // Put objects
+        // Put objects and wait for completion
         CompletableFuture<Void> put1 = client.putObject(key1, value1);
         CompletableFuture<Void> put2 = client.putObject(key2, value2);
         
-        // Wait for operations to complete
-        put1.get(5, TimeUnit.SECONDS);
-        put2.get(5, TimeUnit.SECONDS);
+        minispark.util.TestUtils.runUntil(messageBus, () -> put1.isDone(), java.time.Duration.ofSeconds(5));
+        put1.get();
+        minispark.util.TestUtils.runUntil(messageBus, () -> put2.isDone(), java.time.Duration.ofSeconds(5));
+        put2.get();
 
-        // Get objects back
+        // Retrieve objects and verify they are stored correctly
         CompletableFuture<byte[]> get1 = client.getObject(key1);
         CompletableFuture<byte[]> get2 = client.getObject(key2);
         
-        // Verify objects are retrieved correctly
-        assertArrayEquals(value1, get1.get(5, TimeUnit.SECONDS));
-        assertArrayEquals(value2, get2.get(5, TimeUnit.SECONDS));
+        minispark.util.TestUtils.runUntil(messageBus, () -> get1.isDone(), java.time.Duration.ofSeconds(5));
+        minispark.util.TestUtils.runUntil(messageBus, () -> get2.isDone(), java.time.Duration.ofSeconds(5));
+        
+        assertArrayEquals(value1, get1.get());
+        assertArrayEquals(value2, get2.get());
     }
 } 

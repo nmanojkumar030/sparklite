@@ -6,6 +6,7 @@ import minispark.core.Partition;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -48,48 +49,67 @@ public class ObjectStoreRDD implements MiniRDD<byte[]> {
     }
 
     @Override
-    public Iterator<byte[]> compute(Partition split) {
-        logger.warn("Expected ObjectStorePartition but got {} - attempting to convert", split.getClass().getName());
+    public CompletableFuture<Iterator<byte[]>> compute(Partition split) {
+        logger.debug("Computing partition {} asynchronously", split.index());
         ObjectStorePartition partition = new ObjectStorePartition(split.index(), baseKey);
-        logger.debug("Created new ObjectStorePartition from generic partition with ID {}", split.index());
-        return computePartition(partition);
-
+        return computePartitionAsync(partition);
     }
 
-    private Iterator<byte[]> computePartition(ObjectStorePartition partition) {
-        try {
-            // List all objects with the base key prefix
-            List<String> allKeys = objectStoreClient.listObjects(partition.getBaseKey()).get();
-            logger.debug("Found {} keys with prefix {}", allKeys.size(), partition.getBaseKey());
+    private CompletableFuture<Iterator<byte[]>> computePartitionAsync(ObjectStorePartition partition) {
+        // First, list all objects with the base key prefix
+        return objectStoreClient.listObjects(partition.getBaseKey())
+            .thenCompose(allKeys -> {
+                logger.debug("Found {} keys with prefix {}", allKeys.size(), partition.getBaseKey());
 
-            // Filter keys for this partition based on hash
-            List<String> partitionKeys = new ArrayList<>();
-            for (String key : allKeys) {
-                if (Math.abs(hash(key) % numPartitions) == partition.index()) {
-                    partitionKeys.add(key);
-                    logger.debug("Key {} assigned to partition {}", key, partition.index());
-                }
-            }
-            logger.debug("Partition {} has {} keys", partition.index(), partitionKeys.size());
-
-            // Read data for this partition's keys
-            List<byte[]> partitionData = new ArrayList<>();
-            for (String key : partitionKeys) {
-                try {
-                    byte[] data = objectStoreClient.getObject(key).get();
-                    if (data != null && data.length > 0) {
-                        partitionData.add(data);
-                        logger.debug("Successfully read data for key {}", key);
+                // Filter keys for this partition based on hash
+                List<String> partitionKeys = new ArrayList<>();
+                for (String key : allKeys) {
+                    if (Math.abs(hash(key) % numPartitions) == partition.index()) {
+                        partitionKeys.add(key);
+                        logger.debug("Key {} assigned to partition {}", key, partition.index());
                     }
-                } catch (Exception e) {
-                    logger.warn("Failed to read object with key {}: {}", key, e.getMessage());
                 }
-            }
+                logger.debug("Partition {} has {} keys", partition.index(), partitionKeys.size());
 
-            return partitionData.iterator();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to read data from ObjectStore", e);
-        }
+                // Create futures for reading all partition keys
+                List<CompletableFuture<byte[]>> dataFutures = new ArrayList<>();
+                for (String key : partitionKeys) {
+                    CompletableFuture<byte[]> dataFuture = objectStoreClient.getObject(key)
+                        .handle((data, throwable) -> {
+                            if (throwable != null) {
+                                logger.warn("Failed to read object with key {}: {}", key, throwable.getMessage());
+                                return null;
+                            }
+                            if (data != null && data.length > 0) {
+                                logger.debug("Successfully read data for key {}", key);
+                                return data;
+                            }
+                            return null;
+                        });
+                    dataFutures.add(dataFuture);
+                }
+
+                // Combine all futures and return iterator
+                return CompletableFuture.allOf(dataFutures.toArray(new CompletableFuture[0]))
+                    .thenApply(v -> {
+                        List<byte[]> partitionData = new ArrayList<>();
+                        for (CompletableFuture<byte[]> future : dataFutures) {
+                            try {
+                                byte[] data = future.get();
+                                if (data != null) {
+                                    partitionData.add(data);
+                                }
+                            } catch (Exception e) {
+                                logger.warn("Error getting future result: {}", e.getMessage());
+                            }
+                        }
+                        return partitionData.iterator();
+                    });
+            })
+            .exceptionally(throwable -> {
+                logger.error("Failed to read data from ObjectStore", throwable);
+                throw new RuntimeException("Failed to read data from ObjectStore", throwable);
+            });
     }
 
     @Override
@@ -114,15 +134,30 @@ public class ObjectStoreRDD implements MiniRDD<byte[]> {
     }
 
     @Override
-    public List<byte[]> collect() {
-        List<byte[]> result = new ArrayList<>();
+    public CompletableFuture<List<byte[]>> collect() {
+        List<CompletableFuture<Iterator<byte[]>>> futures = new ArrayList<>();
+        
+        // Start all partition computations asynchronously
         for (Partition partition : getPartitions()) {
-            Iterator<byte[]> iter = compute(partition);
-            while (iter.hasNext()) {
-                result.add(iter.next());
-            }
+            futures.add(compute(partition));
         }
-        return result;
+        
+        // Combine all futures and return the final result
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .thenApply(v -> {
+                List<byte[]> result = new ArrayList<>();
+                for (CompletableFuture<Iterator<byte[]>> future : futures) {
+                    try {
+                        Iterator<byte[]> iter = future.get();
+                        while (iter.hasNext()) {
+                            result.add(iter.next());
+                        }
+                    } catch (Exception e) {
+                        throw new RuntimeException("Failed to get partition result", e);
+                    }
+                }
+                return result;
+            });
     }
 
     private long hash(String key) {

@@ -2,6 +2,7 @@ package minispark.core;
 
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -20,7 +21,7 @@ public interface MiniRDD<T> {
 
     // Core RDD properties from Spark
     Partition[] getPartitions();
-    Iterator<T> compute(Partition split);
+    CompletableFuture<Iterator<T>> compute(Partition split);
     List<MiniRDD<?>> getDependencies();
     
     // Optional properties
@@ -31,6 +32,6 @@ public interface MiniRDD<T> {
     MiniRDD<T> filter(Predicate<T> f);
     
     // Actions (eager)
-    List<T> collect();
+    CompletableFuture<List<T>> collect();
 }
 

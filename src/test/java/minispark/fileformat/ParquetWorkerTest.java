@@ -99,7 +99,8 @@ class ParquetWorkerTest {
         List<CustomerData> processedCustomers = new ArrayList<>();
         for (CompletableFuture<CustomerData> future : futures) {
             try {
-                CustomerData result = future.get(30, TimeUnit.SECONDS);
+                minispark.util.TestUtils.runUntil(messageBus, () -> future.isDone(), java.time.Duration.ofSeconds(30));
+                CustomerData result = future.get();
                 if (result != null) {
                     processedCustomers.add(result);
                     System.out.println("Received customer: " + result.getName() + " (ID: " + result.getId() + ")");
@@ -239,36 +240,37 @@ class ParquetWorkerTest {
         }
         
         @Override
-        public Iterator<CustomerData> compute(Partition split) {
+        public CompletableFuture<Iterator<CustomerData>> compute(Partition split) {
             logger.debug("Processing Parquet partition {}", split.index());
             
-            List<CustomerData> customers = new ArrayList<>();
-            Iterator<Group> iter = parent.compute(split);
-            
-            while (iter.hasNext()) {
-                Group group = iter.next();
-                try {
-                    CustomerData customer = new CustomerData(
-                        group.getInteger("id", 0),
-                        group.getString("name", 0),
-                        group.getString("email", 0),
-                        group.getInteger("age", 0),
-                        group.getString("city", 0)
-                    );
-                    customers.add(customer);
-                    
-                    logger.debug("Processed customer {} in partition {}", 
-                        customer.getId(), split.index());
-                } catch (Exception e) {
-                    logger.warn("Failed to process record in partition {}: {}", 
-                        split.index(), e.getMessage());
+            return parent.compute(split).thenApply(iter -> {
+                List<CustomerData> customers = new ArrayList<>();
+                
+                while (iter.hasNext()) {
+                    Group group = iter.next();
+                    try {
+                        CustomerData customer = new CustomerData(
+                            group.getInteger("id", 0),
+                            group.getString("name", 0),
+                            group.getString("email", 0),
+                            group.getInteger("age", 0),
+                            group.getString("city", 0)
+                        );
+                        customers.add(customer);
+                        
+                        logger.debug("Processed customer {} in partition {}", 
+                            customer.getId(), split.index());
+                    } catch (Exception e) {
+                        logger.warn("Failed to process record in partition {}: {}", 
+                            split.index(), e.getMessage());
+                    }
                 }
-            }
-            
-            logger.debug("Partition {} processed {} customers", 
-                split.index(), customers.size());
-            
-            return customers.iterator();
+                
+                logger.debug("Partition {} processed {} customers", 
+                    split.index(), customers.size());
+                
+                return customers.iterator();
+            });
         }
         
         @Override
@@ -292,15 +294,28 @@ class ParquetWorkerTest {
         }
         
         @Override
-        public List<CustomerData> collect() {
-            List<CustomerData> result = new ArrayList<>();
+        public CompletableFuture<List<CustomerData>> collect() {
+            List<CompletableFuture<Iterator<CustomerData>>> futures = new ArrayList<>();
+            
             for (Partition partition : getPartitions()) {
-                Iterator<CustomerData> iter = compute(partition);
-                while (iter.hasNext()) {
-                    result.add(iter.next());
-                }
+                futures.add(compute(partition));
             }
-            return result;
+            
+            return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .thenApply(v -> {
+                    List<CustomerData> result = new ArrayList<>();
+                    for (CompletableFuture<Iterator<CustomerData>> future : futures) {
+                        try {
+                            Iterator<CustomerData> iter = future.get();
+                            while (iter.hasNext()) {
+                                result.add(iter.next());
+                            }
+                        } catch (Exception e) {
+                            throw new RuntimeException("Failed to get partition result", e);
+                        }
+                    }
+                    return result;
+                });
         }
     }
 } 
