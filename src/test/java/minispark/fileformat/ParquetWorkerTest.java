@@ -4,6 +4,7 @@ import minispark.core.MiniRDD;
 import minispark.core.Partition;
 import minispark.network.MessageBus;
 import minispark.objectstore.SparkCluster;
+import minispark.util.SimulationRunner;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.column.ParquetProperties;
@@ -24,11 +25,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -99,7 +97,7 @@ class ParquetWorkerTest {
         List<CustomerData> processedCustomers = new ArrayList<>();
         for (CompletableFuture<CustomerData> future : futures) {
             try {
-                minispark.util.TestUtils.runUntil(messageBus, () -> future.isDone(), java.time.Duration.ofSeconds(30));
+                SimulationRunner.runUntil(messageBus, () -> future.isDone(), java.time.Duration.ofSeconds(30));
                 CustomerData result = future.get();
                 if (result != null) {
                     processedCustomers.add(result);

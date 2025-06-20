@@ -189,10 +189,17 @@ public class Worker implements MessageBus.MessageHandler {
                 workerId, task.getTaskId(), partition.index(), partition.getClass().getSimpleName());
             
             // Execute task - this may return futures that need tick progression
-            Object result = executeTaskWithTickProgression(typedTask, partition);
-            
-            logger.info("Worker {} completed task {} with result: {}", workerId, task.getTaskId(), result);
-            sendTaskResult(task, result, null);
+//            Object result = executeTaskWithTickProgression(typedTask, partition);
+            CompletableFuture<?> future = task.execute(partition);
+            future.whenComplete((result, throwable) -> {
+                logger.info("Worker {} completed task {} with result: {}", workerId, task.getTaskId(), result);
+                if (throwable != null) {
+                    sendTaskResult(task, result, throwable);
+                    return;
+                }
+                sendTaskResult(task, result, null);
+            });
+
             
         } catch (Exception e) {
             logger.error("Worker {} failed to execute task {}: {}", workerId, task.getTaskId(), e.getMessage(), e);
@@ -250,13 +257,7 @@ public class Worker implements MessageBus.MessageHandler {
         CompletableFuture<Object> future = task.execute(partition);
         
         logger.debug("Worker {} task {} returned future, driving ticks until completion", workerId, task.getTaskId());
-        
-        // Drive ticks until the future completes
-        // NOTE: No Thread.sleep() - pure deterministic tick progression
-        while (!future.isDone()) {
-            messageBus.tick();
-        }
-        
+
         try {
             Object result = future.get();
             logger.debug("Worker {} task {} future completed with result", workerId, task.getTaskId());
@@ -267,7 +268,7 @@ public class Worker implements MessageBus.MessageHandler {
         }
     }
 
-    private void sendTaskResult(Task<?, ?> task, Object result, Exception error) {
+    private void sendTaskResult(Task<?, ?> task, Object result, Throwable error) {
         TaskResultMessage resultMessage = new TaskResultMessage(task.getTaskId(), task.getStageId(), result, error);
         logger.info("Worker {} sending {} result for task {} to {}", 
             workerId, error == null ? "success" : "failure", task.getTaskId(), schedulerEndpoint);

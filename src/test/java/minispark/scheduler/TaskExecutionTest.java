@@ -3,6 +3,7 @@ package minispark.scheduler;
 import minispark.core.Partition;
 import minispark.network.MessageBus;
 import minispark.network.NetworkEndpoint;
+import minispark.util.SimulationRunner;
 import minispark.worker.Worker;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,7 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class TaskExecutionTest {
@@ -39,7 +40,7 @@ class TaskExecutionTest {
         worker2.start();
 
         // Wait for workers to register using tick progression
-        minispark.util.TestUtils.runUntil(messageBus, 
+        SimulationRunner.runUntil(messageBus,
             () -> taskScheduler.getNumWorkers() >= 2, 
             java.time.Duration.ofSeconds(5));
     }
@@ -64,8 +65,8 @@ class TaskExecutionTest {
         assertEquals(2, futures.size());
 
         // Wait for results with tick progression
-        minispark.util.TestUtils.runUntil(messageBus, () -> futures.get(0).isDone(), java.time.Duration.ofSeconds(5));
-        minispark.util.TestUtils.runUntil(messageBus, () -> futures.get(1).isDone(), java.time.Duration.ofSeconds(5));
+        SimulationRunner.runUntil(messageBus, () -> futures.get(0).isDone(), java.time.Duration.ofSeconds(5));
+        SimulationRunner.runUntil(messageBus, () -> futures.get(1).isDone(), java.time.Duration.ofSeconds(5));
         
         Integer result1 = futures.get(0).get();
         Integer result2 = futures.get(1).get();
@@ -86,22 +87,16 @@ class TaskExecutionTest {
         assertEquals(1, futures.size());
 
         // Wait for completion with tick progression
-        minispark.util.TestUtils.runUntil(messageBus, () -> futures.get(0).isDone(), java.time.Duration.ofSeconds(5));
+        SimulationRunner.runUntil(messageBus, () -> futures.get(0).isDone(), java.time.Duration.ofSeconds(5));
 
         // Verify that the task fails with the expected exception
         Exception exception = assertThrows(Exception.class, () -> {
             futures.get(0).get();
         });
         
-        // The original IllegalArgumentException is now wrapped in multiple layers:
-        // ExecutionException -> RuntimeException -> ExecutionException -> IllegalArgumentException
+        // The original IllegalArgumentException is now wrapped in ExecutionException:
+        // ExecutionException -> IllegalArgumentException
         Throwable cause = exception.getCause(); // RuntimeException
-        if (cause != null) {
-            cause = cause.getCause(); // ExecutionException
-        }
-        if (cause != null) {
-            cause = cause.getCause(); // IllegalArgumentException
-        }
         assertTrue(cause instanceof IllegalArgumentException);
     }
 

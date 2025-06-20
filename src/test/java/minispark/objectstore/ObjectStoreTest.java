@@ -2,16 +2,15 @@ package minispark.objectstore;
 
 import minispark.network.MessageBus;
 import minispark.network.NetworkEndpoint;
+import minispark.util.SimulationRunner;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import minispark.objectstore.serialization.ObjectStoreSerializer;
 
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutionException;
 import java.util.Collections;
 
@@ -52,12 +51,12 @@ class ObjectStoreTest {
 
         // Put object and wait for completion
         CompletableFuture<Void> putFuture = client.putObject(key, data.getBytes());
-        minispark.util.TestUtils.runUntil(messageBus, () -> putFuture.isDone(), java.time.Duration.ofSeconds(5));
+        SimulationRunner.runUntil(messageBus, () -> putFuture.isDone(), java.time.Duration.ofSeconds(5));
         putFuture.get();
 
         // Get object and verify
         CompletableFuture<byte[]> getFuture = client.getObject(key);
-        minispark.util.TestUtils.runUntil(messageBus, () -> getFuture.isDone(), java.time.Duration.ofSeconds(5));
+        SimulationRunner.runUntil(messageBus, () -> getFuture.isDone(), java.time.Duration.ofSeconds(5));
         byte[] retrievedData = getFuture.get();
         assertEquals(data, new String(retrievedData), "Retrieved data should match stored data");
     }
@@ -66,16 +65,16 @@ class ObjectStoreTest {
     void shouldDeleteObject() throws Exception {
         String data = "test data";
         CompletableFuture<Void> putFuture = client.putObject("test-key", data.getBytes());
-        minispark.util.TestUtils.runUntil(messageBus, () -> putFuture.isDone(), java.time.Duration.ofSeconds(5));
+        SimulationRunner.runUntil(messageBus, () -> putFuture.isDone(), java.time.Duration.ofSeconds(5));
         putFuture.get();
         
         CompletableFuture<Void> deleteFuture = client.deleteObject("test-key");
-        minispark.util.TestUtils.runUntil(messageBus, () -> deleteFuture.isDone(), java.time.Duration.ofSeconds(5));
+        SimulationRunner.runUntil(messageBus, () -> deleteFuture.isDone(), java.time.Duration.ofSeconds(5));
         deleteFuture.get();
 
         ExecutionException exception = assertThrows(ExecutionException.class, () -> {
             CompletableFuture<byte[]> getFuture = client.getObject("test-key");
-            minispark.util.TestUtils.runUntil(messageBus, () -> getFuture.isDone(), java.time.Duration.ofSeconds(5));
+            SimulationRunner.runUntil(messageBus, () -> getFuture.isDone(), java.time.Duration.ofSeconds(5));
             getFuture.get();
         });
         assertTrue(exception.getCause() instanceof RuntimeException);
@@ -86,16 +85,16 @@ class ObjectStoreTest {
     void shouldListObjects() throws Exception {
         // Put multiple objects
         CompletableFuture<Void> put1Future = client.putObject("key1", "data1".getBytes());
-        minispark.util.TestUtils.runUntil(messageBus, () -> put1Future.isDone(), java.time.Duration.ofSeconds(5));
+        SimulationRunner.runUntil(messageBus, () -> put1Future.isDone(), java.time.Duration.ofSeconds(5));
         put1Future.get();
         
         CompletableFuture<Void> put2Future = client.putObject("key2", "data2".getBytes());
-        minispark.util.TestUtils.runUntil(messageBus, () -> put2Future.isDone(), java.time.Duration.ofSeconds(5));
+        SimulationRunner.runUntil(messageBus, () -> put2Future.isDone(), java.time.Duration.ofSeconds(5));
         put2Future.get();
 
         // Get list of objects
         CompletableFuture<List<String>> listFuture = client.listObjects("");
-        minispark.util.TestUtils.runUntil(messageBus, () -> listFuture.isDone(), java.time.Duration.ofSeconds(5));
+        SimulationRunner.runUntil(messageBus, () -> listFuture.isDone(), java.time.Duration.ofSeconds(5));
         List<String> objects = listFuture.get();
 
         // Verify objects are listed

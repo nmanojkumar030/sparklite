@@ -4,9 +4,9 @@ public class TaskResultMessage extends Message {
     private final int taskId;
     private final int stageId;
     private final Object result;
-    private final Exception error;
+    private final Throwable error;
 
-    public TaskResultMessage(int taskId, int stageId, Object result, Exception error) {
+    public TaskResultMessage(int taskId, int stageId, Object result, Throwable error) {
         super(MessageType.TASK_RESULT);
         this.taskId = taskId;
         this.stageId = stageId;
@@ -26,7 +26,7 @@ public class TaskResultMessage extends Message {
         return result;
     }
 
-    public Exception getError() {
+    public Throwable getError() {
         return error;
     }
 

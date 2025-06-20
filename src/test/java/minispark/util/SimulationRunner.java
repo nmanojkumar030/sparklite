@@ -10,8 +10,8 @@ import java.util.function.BooleanSupplier;
 /**
  * Test helper utilities shared across MiniSpark test suites.
  */
-public final class TestUtils {
-    private TestUtils() {}
+public final class SimulationRunner {
+    private SimulationRunner() {}
 
     /**
      * Drives the {@link MessageBus} until the supplied {@code condition} becomes {@code true} or the

@@ -3,6 +3,7 @@ package minispark.objectstore;
 import minispark.core.MiniRDD;
 import minispark.core.Partition;
 import minispark.network.MessageBus;
+import minispark.util.SimulationRunner;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,7 +63,7 @@ class ObjectStoreWorkerTest {
             putFutures.add(f);
         }
 
-        minispark.util.TestUtils.runUntil(messageBus,
+        SimulationRunner.runUntil(messageBus,
                 () -> putFutures.stream().allMatch(CompletableFuture::isDone),
                 Duration.ofSeconds(10));
 
@@ -85,7 +86,7 @@ class ObjectStoreWorkerTest {
                 .submitJob(customerRdd, customerRdd.getPartitions().length);
 
         // Use TestUtils.runUntil instead of blocking get calls.
-        minispark.util.TestUtils.runUntil(messageBus,
+        SimulationRunner.runUntil(messageBus,
                 () -> futures.stream().allMatch(CompletableFuture::isDone),
                 Duration.ofSeconds(30));
 

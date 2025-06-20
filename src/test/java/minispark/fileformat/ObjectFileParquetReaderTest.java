@@ -1,5 +1,6 @@
 package minispark.fileformat;
 
+import minispark.util.SimulationRunner;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.column.ParquetProperties;
@@ -30,9 +31,7 @@ import minispark.network.NetworkEndpoint;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -155,7 +154,7 @@ class ObjectFileParquetReaderTest {
             
             // Drive ticks until the future completes - this allows async operations inside
             // createPartitions() to make progress
-            minispark.util.TestUtils.runUntil(messageBus, () -> partitionsFuture.isDone(), java.time.Duration.ofSeconds(10));
+            SimulationRunner.runUntil(messageBus, () -> partitionsFuture.isDone(), java.time.Duration.ofSeconds(10));
             FilePartition[] partitions;
             try {
                 partitions = partitionsFuture.get();
@@ -236,7 +235,7 @@ class ObjectFileParquetReaderTest {
             System.out.printf("📤 Uploading to object store: %s (%d customers, %d bytes)%n", 
                 objectStoreKey, customers.length, fileData.length);
             CompletableFuture<Void> putFuture = objectStoreClient.putObject(objectStoreKey, fileData);
-            minispark.util.TestUtils.runUntil(messageBus, () -> putFuture.isDone(), java.time.Duration.ofSeconds(10));
+            SimulationRunner.runUntil(messageBus, () -> putFuture.isDone(), java.time.Duration.ofSeconds(10));
             putFuture.get();
             System.out.println("✅ Upload completed successfully");
         } catch (Exception e) {

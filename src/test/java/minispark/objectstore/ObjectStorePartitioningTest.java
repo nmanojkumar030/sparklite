@@ -3,7 +3,7 @@ package minispark.objectstore;
 import minispark.MiniSparkContext;
 import minispark.network.MessageBus;
 import minispark.network.NetworkEndpoint;
-import minispark.util.TestUtils;
+import minispark.util.SimulationRunner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,7 +17,6 @@ import java.util.Objects;
 import java.io.Serializable;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CompletableFuture;
 import java.util.HashSet;
 
@@ -96,13 +95,13 @@ class ObjectStorePartitioningTest {
     }
 
     private void runUntilDone(List<Future> f) {
-        TestUtils.runUntil(messageBus,
+        SimulationRunner.runUntil(messageBus,
             () -> f.stream().allMatch(Future::isDone),
             Duration.ofSeconds(10));
 
     }
     private <T> CompletableFuture<T> runUntilDone(CompletableFuture<T> putFuture) {
-        TestUtils.runUntil(messageBus,
+        SimulationRunner.runUntil(messageBus,
             () -> putFuture.isDone(),
             Duration.ofSeconds(10));
         return putFuture;
@@ -200,7 +199,7 @@ class ObjectStorePartitioningTest {
 
         // Collect and verify data
         CompletableFuture<List<byte[]>> collectFuture = rdd.collect();
-        minispark.util.TestUtils.runUntil(messageBus, () -> collectFuture.isDone(), java.time.Duration.ofSeconds(10));
+        SimulationRunner.runUntil(messageBus, () -> collectFuture.isDone(), java.time.Duration.ofSeconds(10));
         List<byte[]> result = collectFuture.get();
         assertEquals(20, result.size());
 

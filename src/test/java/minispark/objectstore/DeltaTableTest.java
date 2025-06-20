@@ -2,6 +2,7 @@ package minispark.objectstore;
 
 import minispark.network.MessageBus;
 import minispark.network.NetworkEndpoint;
+import minispark.util.SimulationRunner;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.column.ParquetProperties;
 import org.apache.parquet.example.data.Group;
@@ -167,7 +168,7 @@ class DeltaTableTest {
         CompletableFuture<Void> parentFuture = client.putObject(parentPath + "/.keep", new byte[0]);
         
         // Use tick progression instead of blocking join()
-        minispark.util.TestUtils.runUntil(messageBus,
+        SimulationRunner.runUntil(messageBus,
             () -> parentFuture.isDone(),
             java.time.Duration.ofSeconds(5));
         
@@ -175,7 +176,7 @@ class DeltaTableTest {
         CompletableFuture<Void> fileFuture = client.putObject(filePath, parquetData);
         
         // Use tick progression instead of blocking join()
-        minispark.util.TestUtils.runUntil(messageBus,
+        SimulationRunner.runUntil(messageBus,
             () -> fileFuture.isDone(),
             java.time.Duration.ofSeconds(5));
         
@@ -214,7 +215,7 @@ class DeltaTableTest {
         CompletableFuture<byte[]> futureData = client.getObject(filePath);
         
         // Use tick progression instead of blocking join()
-        minispark.util.TestUtils.runUntil(messageBus,
+        SimulationRunner.runUntil(messageBus,
             () -> futureData.isDone(),
             java.time.Duration.ofSeconds(5));
         

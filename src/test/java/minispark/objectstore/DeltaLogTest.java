@@ -2,6 +2,7 @@ package minispark.objectstore;
 
 import minispark.network.MessageBus;
 import minispark.network.NetworkEndpoint;
+import minispark.util.SimulationRunner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -100,13 +101,13 @@ class DeltaLogTest {
             CompletableFuture<Void> putFuture = client.putObject(logPath, logData);
             
             // Use tick progression instead of blocking join()
-            minispark.util.TestUtils.runUntil(messageBus,
+            SimulationRunner.runUntil(messageBus,
                 () -> putFuture.isDone(),
                 java.time.Duration.ofSeconds(5));
             
             // Verify the log was stored
             CompletableFuture<byte[]> futureData = client.getObject(logPath);
-            minispark.util.TestUtils.runUntil(messageBus,
+            SimulationRunner.runUntil(messageBus,
                 () -> futureData.isDone(),
                 java.time.Duration.ofSeconds(5));
             
@@ -124,7 +125,7 @@ class DeltaLogTest {
         // Verify all logs can be retrieved in order
         for (String logPath : logFiles) {
             CompletableFuture<byte[]> futureData = client.getObject(logPath);
-            minispark.util.TestUtils.runUntil(messageBus,
+            SimulationRunner.runUntil(messageBus,
                 () -> futureData.isDone(),
                 java.time.Duration.ofSeconds(5));
             
