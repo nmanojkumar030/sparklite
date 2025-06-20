@@ -1,7 +1,7 @@
 package minispark.worker;
 
-import minispark.core.Partition;
 import minispark.core.BasePartition;
+import minispark.core.Partition;
 import minispark.core.Task;
 import minispark.messages.Message;
 import minispark.messages.SubmitTaskMessage;
@@ -31,6 +31,7 @@ public class Worker implements MessageBus.MessageHandler {
     private final NetworkEndpoint schedulerEndpoint;
     private final int numCores;
     private final MessageBus messageBus;
+    
     // Note: In deterministic simulation, we don't use thread pools
     // private final ExecutorService executorService;
 
@@ -81,26 +82,20 @@ public class Worker implements MessageBus.MessageHandler {
                 Partition partition;
                 if (task instanceof minispark.core.RDDTask) {
                     minispark.core.RDDTask<?> rddTask = (minispark.core.RDDTask<?>) task;
-                    try {
-                        // Use reflection to get the RDD from the task
-                        java.lang.reflect.Field rddField = minispark.core.RDDTask.class.getDeclaredField("rdd");
-                        rddField.setAccessible(true);
-                        minispark.core.MiniRDD<?> rdd = (minispark.core.MiniRDD<?>) rddField.get(rddTask);
-                        
-                        // Get the actual partition from the RDD
-                        Partition[] partitions = rdd.getPartitions();
-                        if (task.getPartitionId() < partitions.length) {
-                            partition = partitions[task.getPartitionId()];
-                            logger.debug("Worker {} using actual partition {} of type {}", 
-                                workerId, partition.index(), partition.getClass().getSimpleName());
-                        } else {
-                            logger.warn("Worker {} partition index {} out of bounds, using BasePartition", 
-                                workerId, task.getPartitionId());
-                            partition = new BasePartition(task.getPartitionId());
-                        }
-                    } catch (Exception e) {
-                        logger.warn("Worker {} failed to get RDD partition, using BasePartition: {}", 
-                            workerId, e.getMessage());
+                    
+                    // ENCAPSULATION FIX: Use proper getter instead of reflection
+                    // This eliminates reflection, improves performance, and makes dependencies explicit
+                    minispark.core.MiniRDD<?> rdd = rddTask.getRdd();
+                    
+                    // Get the actual partition from the RDD
+                    Partition[] partitions = rdd.getPartitions();
+                    if (task.getPartitionId() < partitions.length) {
+                        partition = partitions[task.getPartitionId()];
+                        logger.debug("Worker {} using actual partition {} of type {}", 
+                            workerId, partition.index(), partition.getClass().getSimpleName());
+                    } else {
+                        logger.warn("Worker {} partition index {} out of bounds, using BasePartition", 
+                            workerId, task.getPartitionId());
                         partition = new BasePartition(task.getPartitionId());
                     }
                 } else {
@@ -129,6 +124,10 @@ public class Worker implements MessageBus.MessageHandler {
      * Executes a task with tick progression for any futures that need to complete.
      * This is the key method that enables deterministic simulation by driving
      * the MessageBus tick loop until all async operations complete.
+     * 
+     * DETERMINISM NOTE: Removed Thread.sleep() to avoid yielding to OS scheduler
+     * which breaks determinism under load. Pure tick progression ensures 
+     * deterministic execution order.
      */
     private Object executeTaskWithTickProgression(Task<Object, Object> task, Partition partition) {
         // Execute the task - this now returns a CompletableFuture
@@ -137,16 +136,9 @@ public class Worker implements MessageBus.MessageHandler {
         logger.debug("Worker {} task {} returned future, driving ticks until completion", workerId, task.getTaskId());
         
         // Drive ticks until the future completes
+        // NOTE: No Thread.sleep() - pure deterministic tick progression
         while (!future.isDone()) {
             messageBus.tick();
-            
-            // Brief yield to avoid tight CPU loop
-            try {
-                Thread.sleep(1);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new RuntimeException("Task execution interrupted", e);
-            }
         }
         
         try {

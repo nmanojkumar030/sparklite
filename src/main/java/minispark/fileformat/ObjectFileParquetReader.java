@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 import org.apache.parquet.io.ColumnIOFactory;
 import org.apache.parquet.io.MessageColumnIO;
@@ -45,7 +47,18 @@ public class ObjectFileParquetReader implements FormatReader<Group> {
         try {
             // Use efficient range reads for object store
             logger.info("Using object store range reads for footer metadata: {}", filePath);
-            ObjectStoreInputFile inputFile = new ObjectStoreInputFile(objectStoreClient, filePath);
+            
+            // DETERMINISM FIX: Use async factory method instead of blocking constructor
+            CompletableFuture<ObjectStoreInputFile> inputFileFuture = ObjectStoreInputFile.create(objectStoreClient, filePath);
+            
+            // Since this method is called from supplyAsync context with tick progression,
+            // we can safely wait for the future to complete
+            ObjectStoreInputFile inputFile;
+            try {
+                inputFile = inputFileFuture.get();
+            } catch (InterruptedException | ExecutionException e) {
+                throw new IOException("Failed to create ObjectStoreInputFile for " + filePath, e);
+            }
             
             ParquetMetadata parquetMetadata;
             // Use try-with-resources to read footer
@@ -146,7 +159,15 @@ public class ObjectFileParquetReader implements FormatReader<Group> {
     private void readPartitionFromObjectStore(String filePath, List<Integer> rowGroupIndices, List<Group> partitionData) throws IOException {
         logger.debug("Reading from object store with range reads: {}", filePath);
         
-        ObjectStoreInputFile inputFile = new ObjectStoreInputFile(objectStoreClient, filePath);
+        // DETERMINISM FIX: Use async factory method instead of blocking constructor
+        CompletableFuture<ObjectStoreInputFile> inputFileFuture = ObjectStoreInputFile.create(objectStoreClient, filePath);
+        
+        ObjectStoreInputFile inputFile;
+        try {
+            inputFile = inputFileFuture.get();
+        } catch (InterruptedException | ExecutionException e) {
+            throw new IOException("Failed to create ObjectStoreInputFile for " + filePath, e);
+        }
         
         try (ParquetFileReader fileReader = ParquetFileReader.open(inputFile)) {
             // Get the schema for creating groups

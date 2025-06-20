@@ -142,8 +142,9 @@ class ObjectFileParquetReaderTest {
             // Act: Create partitions (this triggers footer reading with range requests)
             System.out.println("📋 Step 2: Creating partitions (reading footer)...");
             
-            // Since createPartitions makes blocking calls to object store, we need to run it in a separate thread
-            // and drive ticks until it completes
+            // DETERMINISM FIX: Use supplyAsync but ensure tick progression while it runs
+            // createPartitions() makes async calls to object store, so it needs to run 
+            // in a context where ticks are being driven
             CompletableFuture<FilePartition[]> partitionsFuture = CompletableFuture.supplyAsync(() -> {
                 try {
                     return objectFileReader.createPartitions(objectStoreKey, DEFAULT_TARGET_PARTITIONS);
@@ -152,6 +153,8 @@ class ObjectFileParquetReaderTest {
                 }
             });
             
+            // Drive ticks until the future completes - this allows async operations inside
+            // createPartitions() to make progress
             minispark.util.TestUtils.runUntil(messageBus, () -> partitionsFuture.isDone(), java.time.Duration.ofSeconds(10));
             FilePartition[] partitions;
             try {

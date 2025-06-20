@@ -1,12 +1,13 @@
 package minispark.objectstore;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.io.IOException;
 import java.util.stream.Collectors;
 import java.util.UUID;
+import java.util.LinkedHashMap;
 
 import minispark.network.MessageBus;
 import minispark.network.NetworkEndpoint;
@@ -21,13 +22,13 @@ public class Client implements MessageBus.MessageHandler {
     private final MessageBus messageBus;
     private final NetworkEndpoint clientEndpoint;
     private final HashRing hashRing;
-    private final ConcurrentHashMap<String, CompletableFuture<Object>> pendingRequests;
+    private final LinkedHashMap<String, CompletableFuture<Object>> pendingRequests;
 
     public Client(MessageBus messageBus, NetworkEndpoint clientEndpoint, List<NetworkEndpoint> serverEndpoints) {
         this.messageBus = messageBus;
         this.clientEndpoint = clientEndpoint;
         this.hashRing = new HashRing();
-        this.pendingRequests = new ConcurrentHashMap<>();
+        this.pendingRequests = new LinkedHashMap<>();
         messageBus.registerHandler(clientEndpoint, this);
         
         // Initialize hash ring with servers
@@ -179,11 +180,20 @@ public class Client implements MessageBus.MessageHandler {
         
         // Combine results from all servers
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-            .thenApply(v -> futures.stream()
-                .map(CompletableFuture::join)
-                .flatMap(List::stream)
-                .distinct()
-                .collect(Collectors.toList()));
+            .thenApply(v -> {
+                List<String> allObjects = new ArrayList<>();
+                for (CompletableFuture<List<String>> future : futures) {
+                    try {
+                        // DETERMINISM FIX: Use get() instead of join() since we're already 
+                        // inside a thenApply callback and allOf() ensures completion
+                        allObjects.addAll(future.get());
+                    } catch (Exception e) {
+                        logger.warn("Failed to get objects from server: {}", e.getMessage());
+                        // Continue with other servers
+                    }
+                }
+                return allObjects.stream().distinct().collect(Collectors.toList());
+            });
     }
 
     @Override

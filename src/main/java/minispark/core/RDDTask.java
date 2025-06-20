@@ -19,6 +19,16 @@ public class RDDTask<T> extends Task<T, T> {
         this.rdd = rdd;
     }
 
+    /**
+     * Get the RDD associated with this task.
+     * This eliminates the need for reflection and provides proper encapsulation.
+     * 
+     * @return The RDD that this task will execute
+     */
+    public MiniRDD<T> getRdd() {
+        return rdd;
+    }
+
     @Override
     public CompletableFuture<T> execute(Partition partition) {
         // Use the partition to compute RDD results - this returns a CompletableFuture

@@ -5,9 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.PriorityBlockingQueue;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 
@@ -39,14 +37,14 @@ public class SimulatedNetwork {
     // Message sequence counter for FIFO ordering when messages have the same delivery tick
     private final AtomicLong messageSequence = new AtomicLong(0);
 
-    // Map of disconnected endpoints
-    private final Map<NetworkEndpoint, Set<NetworkEndpoint>> disconnectedEndpoints = new ConcurrentHashMap<>();
+    // Map of disconnected endpoints - use LinkedHashMap for deterministic iteration
+    private final Map<NetworkEndpoint, Set<NetworkEndpoint>> disconnectedEndpoints = new LinkedHashMap<>();
 
     // Message delivery callback
     private final BiConsumer<MessageEnvelope, DeliveryContext> messageDeliveryCallback;
 
-    // Random number generator
-    private final Random random = new Random();
+    // Random number generator - seeded for deterministic behavior
+    private final Random random;
 
     /**
      * Delivery context provided when delivering a message.
@@ -95,15 +93,28 @@ public class SimulatedNetwork {
 
     /**
      * Creates a new SimulatedNetwork with the specified message delivery callback.
+     * Uses a default seed of 0 for deterministic behavior.
      *
      * @param messageDeliveryCallback The callback to invoke when messages are delivered
      */
     public SimulatedNetwork(BiConsumer<MessageEnvelope, DeliveryContext> messageDeliveryCallback) {
+        this(messageDeliveryCallback, 0L);
+    }
+
+    /**
+     * Creates a new SimulatedNetwork with the specified message delivery callback and random seed.
+     *
+     * @param messageDeliveryCallback The callback to invoke when messages are delivered
+     * @param randomSeed The seed for the random number generator to ensure deterministic behavior
+     */
+    public SimulatedNetwork(BiConsumer<MessageEnvelope, DeliveryContext> messageDeliveryCallback, long randomSeed) {
         if (messageDeliveryCallback == null) {
             throw new IllegalArgumentException("Message delivery callback cannot be null");
         }
         this.messageDeliveryCallback = messageDeliveryCallback;
         this.messageQueue = new PriorityBlockingQueue<>();
+        this.random = new Random(randomSeed);
+        logger.info("SimulatedNetwork initialized with random seed: {}", randomSeed);
     }
 
     /**
@@ -176,8 +187,8 @@ public class SimulatedNetwork {
      * @param endpoint2 Second endpoint
      */
     public void disconnectEndpointsBidirectional(NetworkEndpoint endpoint1, NetworkEndpoint endpoint2) {
-        disconnectedEndpoints.computeIfAbsent(endpoint1, k -> new HashSet<>()).add(endpoint2);
-        disconnectedEndpoints.computeIfAbsent(endpoint2, k -> new HashSet<>()).add(endpoint1);
+        disconnectedEndpoints.computeIfAbsent(endpoint1, k -> new LinkedHashSet<>()).add(endpoint2);
+        disconnectedEndpoints.computeIfAbsent(endpoint2, k -> new LinkedHashSet<>()).add(endpoint1);
         logger.info("Disconnected endpoints bidirectionally: {} <-> {}", endpoint1, endpoint2);
     }
 
@@ -242,6 +253,7 @@ public class SimulatedNetwork {
 
     /**
      * Calculates the delivery tick for a message based on the current tick and latency settings.
+     * Uses seeded random for deterministic behavior.
      *
      * @return The tick at which the message should be delivered
      */
@@ -251,7 +263,8 @@ public class SimulatedNetwork {
         if (minLatencyTicks == maxLatencyTicks) {
             delay = minLatencyTicks;
         } else {
-            delay = minLatencyTicks + ThreadLocalRandom.current().nextInt(maxLatencyTicks - minLatencyTicks + 1);
+            // Use seeded random instead of ThreadLocalRandom for deterministic behavior
+            delay = minLatencyTicks + random.nextInt(maxLatencyTicks - minLatencyTicks + 1);
         }
         
         return currentTick + Math.max(delay, 1); // At minimum, deliver on next tick

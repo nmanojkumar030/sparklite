@@ -12,7 +12,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Implementation of the TaskScheduler interface that manages a pool of workers and
@@ -22,14 +21,17 @@ import java.util.concurrent.ConcurrentHashMap;
  * - Handles task failures and retries
  * - Monitors worker health
  * - Handles worker registration and lifecycle
+ * 
+ * DETERMINISM NOTE: Uses LinkedHashMap instead of ConcurrentHashMap for 
+ * deterministic iteration order in single-threaded execution.
  */
 public class TaskSchedulerImpl implements TaskScheduler, MessageBus.MessageHandler {
     private static final Logger logger = LoggerFactory.getLogger(TaskSchedulerImpl.class);
 
     private final NetworkEndpoint schedulerEndpoint;
     private final MessageBus messageBus;
-    private final Map<String, WorkerInfo> workers = new ConcurrentHashMap<>();
-    private final Map<Integer, CompletableFuture<?>> taskFutures = new ConcurrentHashMap<>();
+    private final Map<String, WorkerInfo> workers = new LinkedHashMap<>();
+    private final Map<Integer, CompletableFuture<?>> taskFutures = new LinkedHashMap<>();
 
     public static class WorkerInfo {
         final String workerId;

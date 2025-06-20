@@ -5,23 +5,25 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListMap;
 
+/**
+ * Hash ring implementation for consistent hashing of keys to servers.
+ * Uses deterministic data structures for reproducible behavior in single-threaded execution.
+ */
 public class HashRing {
     private static final Logger logger = LoggerFactory.getLogger(HashRing.class);
     private static final int VIRTUAL_NODES_PER_SERVER = 100;
-    private final ConcurrentSkipListMap<Long, NetworkEndpoint> ring;
-    private final ConcurrentHashMap<NetworkEndpoint, Set<Long>> serverToPoints;
+    private final TreeMap<Long, NetworkEndpoint> ring;
+    private final LinkedHashMap<NetworkEndpoint, Set<Long>> serverToPoints;
 
     public HashRing() {
-        this.ring = new ConcurrentSkipListMap<>();
-        this.serverToPoints = new ConcurrentHashMap<>();
+        this.ring = new TreeMap<>();
+        this.serverToPoints = new LinkedHashMap<>();
     }
 
     public void addServer(NetworkEndpoint server) {
         logger.info("Adding server {} to hash ring", server);
-        Set<Long> points = new HashSet<>();
+        Set<Long> points = new LinkedHashSet<>();
         
         for (int i = 0; i < VIRTUAL_NODES_PER_SERVER; i++) {
             String virtualNode = server.toString() + "#" + i;
@@ -110,6 +112,6 @@ public class HashRing {
     }
 
     public Set<NetworkEndpoint> getServers() {
-        return new HashSet<>(serverToPoints.keySet());
+        return new LinkedHashSet<>(serverToPoints.keySet());
     }
 } 

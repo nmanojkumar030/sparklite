@@ -4,6 +4,156 @@
 
 The Tick Loop Pattern is a deterministic simulation approach inspired by TigerBeetle's architecture. It ensures that all asynchronous operations progress through controlled tick cycles, making the system completely deterministic and reproducible.
 
+## Expert Review & Determinism Fixes
+
+Based on expert review, we've implemented the following critical determinism improvements:
+
+### 1. **Single Logical Thread** ✅ FIXED
+**Issue**: Workers called `Thread.sleep(1)` which yields to OS scheduler and breaks determinism under load.
+
+**Solution**: Removed all `Thread.sleep()` calls from Worker.executeTaskWithTickProgression(). Pure tick progression ensures deterministic execution order.
+
+```java
+// ❌ Before - Non-deterministic
+while (!future.isDone()) {
+    messageBus.tick();
+    Thread.sleep(1); // Breaks determinism!
+}
+
+// ✅ After - Deterministic  
+while (!future.isDone()) {
+    messageBus.tick(); // Pure tick progression
+}
+```
+
+### 2. **Reproducible Randomness** ✅ FIXED
+**Issue**: `SimulatedNetwork` used `new Random()` and `ThreadLocalRandom.current()` without seeded randomness.
+
+**Solution**: Accept seed in constructor, use seeded Random instance for all randomness.
+
+```java
+// ✅ Deterministic Random Usage
+public SimulatedNetwork(BiConsumer<MessageEnvelope, DeliveryContext> callback, long randomSeed) {
+    this.random = new Random(randomSeed); // Seeded for reproducibility
+}
+
+private long calculateDeliveryTick() {
+    // Use seeded random instead of ThreadLocalRandom
+    delay = minLatencyTicks + random.nextInt(maxLatencyTicks - minLatencyTicks + 1);
+}
+```
+
+### 3. **Deterministic Data Structures** ✅ FIXED
+**Issue**: `ConcurrentHashMap`, `HashMap`, `HashSet` have non-deterministic iteration order that changed between JDKs.
+
+**Solution**: Replaced with `LinkedHashMap`/`LinkedHashSet` for deterministic iteration order.
+
+```java
+// ❌ Before - Non-deterministic iteration
+private final Map<String, WorkerInfo> workers = new ConcurrentHashMap<>();
+private final Set<Long> points = new HashSet<>();
+
+// ✅ After - Deterministic iteration
+private final Map<String, WorkerInfo> workers = new LinkedHashMap<>();
+private final Set<Long> points = new LinkedHashSet<>();
+```
+
+**Files Updated**:
+- `MessageBus`: HashMap → LinkedHashMap
+- `TaskSchedulerImpl`: ConcurrentHashMap → LinkedHashMap  
+- `DAGScheduler`: HashMap → LinkedHashMap, HashSet → LinkedHashSet
+- `Client`: ConcurrentHashMap → LinkedHashMap
+- `SimulatedNetwork`: ConcurrentHashMap → LinkedHashMap, HashSet → LinkedHashSet
+- `HashRing`: ConcurrentHashMap → LinkedHashMap, ConcurrentSkipListMap → TreeMap
+
+### 4. **Centralized Tick Management** ✅ ADDED
+**Enhancement**: Created `SimulationRunner` for centralized tick progression following expert recommendation.
+
+```java
+public class SimulationRunner {
+    public int tick() {
+        // Deterministic tick order: Scheduler → Workers → Network
+        messageBus.tick();
+        return messagesDelivered;
+    }
+    
+    public void runUntil(BooleanSupplier condition, Duration timeout) {
+        // Replaces Thread.sleep() with pure tick progression
+        while (!condition.getAsBoolean()) {
+            tick();
+        }
+    }
+}
+```
+
+## Additional Determinism Hot Spots Fixed
+
+Based on expert review, we identified and fixed these critical remaining issues:
+
+### 5. **Async Executor Usage** ✅ FIXED
+**Issue**: `CompletableFuture.supplyAsync()` uses default executor which is non-deterministic.
+
+**Solution**: Replace with `new CompletableFuture<>()` and manual completion under tick control.
+
+```java
+// ❌ Before - Non-deterministic executor
+CompletableFuture<FilePartition[]> future = CompletableFuture.supplyAsync(() -> {
+    return objectFileReader.createPartitions(key, partitions);
+});
+
+// ✅ After - Manual completion under tick control  
+CompletableFuture<FilePartition[]> future = new CompletableFuture<>();
+try {
+    FilePartition[] partitions = objectFileReader.createPartitions(key, partitions);
+    future.complete(partitions);
+} catch (Exception e) {
+    future.completeExceptionally(e);
+}
+```
+
+### 6. **Blocking Future Operations** ✅ FIXED
+**Issue**: `CompletableFuture::join()` blocks on real time instead of tick progression.
+
+**Solution**: Replace join() with async composition or tick-driven completion.
+
+```java
+// ❌ Before - Blocks on real time
+return futures.stream()
+    .map(CompletableFuture::join)  // Breaks determinism!
+    .collect(toList());
+
+// ✅ After - Async composition
+return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+    .thenApply(v -> {
+        List<String> results = new ArrayList<>();
+        for (CompletableFuture<String> future : futures) {
+            results.addAll(future.get()); // Safe after allOf()
+        }
+        return results;
+    });
+```
+
+### 7. **Test-Time Blocking** ✅ FIXED  
+**Issue**: Tests call `result.join()` inside JUnit thread, blocking on real time.
+
+**Solution**: Use `TestUtils.runUntil()` to drive ticks until completion.
+
+```java
+// ❌ Before - Blocks on real time in tests
+CompletableFuture<FilePartition[]> future = createPartitions();
+FilePartition[] result = future.join(); // Breaks determinism!
+
+// ✅ After - Tick-driven completion in tests
+CompletableFuture<FilePartition[]> future = createPartitions();
+TestUtils.runUntil(messageBus, () -> future.isDone(), Duration.ofSeconds(10));
+FilePartition[] result = future.get(); // Safe after tick progression
+```
+
+**Files Updated**:
+- `ObjectFileParquetReaderTest`: supplyAsync → manual completion
+- `Client`: CompletableFuture::join → async composition
+- Tests: Added tick progression instead of blocking waits
+
 ## Core Principles
 
 ### 1. Single Tick Progression Point
@@ -31,7 +181,6 @@ public class Worker {
         // Drive ticks until completion - ONLY place that should do this
         while (!future.isDone()) {
             messageBus.tick();
-            Thread.sleep(1); // Brief yield
         }
         
         return future.get(); // Safe after isDone()
@@ -150,12 +299,6 @@ public class Worker {
         // Drive ticks until completion - SINGLE PLACE for tick progression
         while (!future.isDone()) {
             messageBus.tick();
-            try {
-                Thread.sleep(1); // Brief yield to avoid tight CPU loop
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new RuntimeException("Task execution interrupted", e);
-            }
         }
         
         try {

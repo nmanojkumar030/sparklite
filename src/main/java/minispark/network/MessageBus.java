@@ -4,7 +4,7 @@ import minispark.messages.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.*;
 
@@ -15,7 +15,7 @@ import java.util.concurrent.*;
 public class MessageBus {
     private static final Logger logger = LoggerFactory.getLogger(MessageBus.class);
 
-    private final Map<NetworkEndpoint, MessageHandler> handlers = new HashMap<>();
+    private final Map<NetworkEndpoint, MessageHandler> handlers = new LinkedHashMap<>();
     private long messageIdGenerator = 0;
     // Network simulator for realistic network behavior
     private final SimulatedNetwork network;

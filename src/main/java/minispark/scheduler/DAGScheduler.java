@@ -24,18 +24,15 @@ public class DAGScheduler {
     private static final Logger logger = LoggerFactory.getLogger(DAGScheduler.class);
 
     private final TaskScheduler taskScheduler;
-    private final Map<Integer, Stage> stages;
-    private final Map<Integer, Set<Integer>> stageDependencies;
-    private final Map<Object, ActiveJob> activeJobs;
+    private final Map<Integer, Stage> stages = new LinkedHashMap<>();
+    private final Map<Integer, Set<Integer>> stageDependencies = new LinkedHashMap<>();
+    private final Map<Object, ActiveJob<?>> activeJobs = new LinkedHashMap<>();
     private final AtomicInteger nextStageId;
     private final AtomicInteger nextJobId;
     private final AtomicInteger nextTaskId;
 
     public DAGScheduler(TaskScheduler taskScheduler) {
         this.taskScheduler = taskScheduler;
-        this.stages = new HashMap<>();
-        this.stageDependencies = new HashMap<>();
-        this.activeJobs = new HashMap<>();
         this.nextStageId = new AtomicInteger(0);
         this.nextJobId = new AtomicInteger(0);
         this.nextTaskId = new AtomicInteger(0);
@@ -94,7 +91,7 @@ public class DAGScheduler {
     }
 
     private void addStageDependency(int childStageId, int parentStageId) {
-        stageDependencies.computeIfAbsent(childStageId, k -> new HashSet<>()).add(parentStageId);
+        stageDependencies.computeIfAbsent(childStageId, k -> new LinkedHashSet<>()).add(parentStageId);
         logger.info("Added dependency: stage {} depends on stage {}", childStageId, parentStageId);
     }
 

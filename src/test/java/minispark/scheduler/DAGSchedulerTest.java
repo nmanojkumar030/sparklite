@@ -4,6 +4,7 @@ import minispark.core.BasePartition;
 import minispark.core.MiniRDD;
 import minispark.core.Partition;
 import minispark.core.Task;
+import minispark.network.MessageBus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -19,9 +20,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class DAGSchedulerTest {
     private DAGScheduler dagScheduler;
     private TestTaskScheduler taskScheduler;
+    private MessageBus messageBus;
 
     @BeforeEach
     void setUp() {
+        messageBus = new MessageBus();
+        messageBus.start();
         taskScheduler = new TestTaskScheduler();
         dagScheduler = new DAGScheduler(taskScheduler);
     }

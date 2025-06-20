@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -22,17 +23,20 @@ public class ObjectStoreInputFile implements InputFile {
     private final String key;
     private final long fileSize;
 
-    public ObjectStoreInputFile(Client objectStoreClient, String key) throws IOException {
+    private ObjectStoreInputFile(Client objectStoreClient, String key, long fileSize) {
         this.objectStoreClient = objectStoreClient;
         this.key = key;
-        
-        // Get file size using HEAD-like request
-        try {
-            this.fileSize = objectStoreClient.getObjectSize(key).get();
-            logger.debug("ObjectStoreInputFile for key {} has size {} bytes", key, fileSize);
-        } catch (InterruptedException | ExecutionException e) {
-            throw new IOException("Failed to get size for object: " + key, e);
-        }
+        this.fileSize = fileSize;
+        logger.debug("ObjectStoreInputFile for key {} has size {} bytes", key, fileSize);
+    }
+
+    /**
+     * Async factory method that creates ObjectStoreInputFile after getting file size.
+     * This avoids blocking .get() calls in the constructor.
+     */
+    public static CompletableFuture<ObjectStoreInputFile> create(Client objectStoreClient, String key) {
+        return objectStoreClient.getObjectSize(key)
+            .thenApply(fileSize -> new ObjectStoreInputFile(objectStoreClient, key, fileSize));
     }
 
     @Override
