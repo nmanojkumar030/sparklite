@@ -57,7 +57,7 @@ public class Worker implements MessageBus.MessageHandler {
     }
 
     public Worker(String workerId, NetworkEndpoint endpoint, NetworkEndpoint schedulerEndpoint, int numCores, MessageBus messageBus) {
-        this(workerId, endpoint, schedulerEndpoint, numCores, messageBus, numCores * 4); // Default queue size
+        this(workerId, endpoint, schedulerEndpoint, numCores, messageBus, 16); // Default queue size (not based on cores)
     }
     
     /**
@@ -75,8 +75,8 @@ public class Worker implements MessageBus.MessageHandler {
         this.maxQueueSize = maxQueueSize;
         this.taskQueue = new LinkedList<>();
         
-        logger.info("Worker {} initialized with {} cores and max queue size {}", 
-            workerId, numCores, maxQueueSize);
+        logger.info("Worker {} initialized with max queue size {} (cores parameter ignored in single-threaded simulation)", 
+            workerId, maxQueueSize);
         
         // Note: In deterministic simulation, we execute tasks synchronously with tick progression
         // this.executorService = Executors.newFixedThreadPool(numCores);
@@ -149,10 +149,13 @@ public class Worker implements MessageBus.MessageHandler {
     }
     
     /**
-     * Process tasks from the queue while respecting core limits.
+     * Process tasks from the queue.
+     * Since execution is single-threaded in the simulation, we process one task at a time.
      */
     private void processTaskQueue() {
-        while (!taskQueue.isEmpty() && activeTasks < numCores) {
+        // In single-threaded simulation, we only need to check if we have capacity
+        // and no active tasks (since we can't actually run tasks in parallel)
+        while (!taskQueue.isEmpty() && activeTasks == 0) {
             PendingTask pendingTask = taskQueue.poll();
             activeTasks++;
             
@@ -166,6 +169,8 @@ public class Worker implements MessageBus.MessageHandler {
                 logger.error("Worker {} failed to start task {}: {}", 
                     workerId, pendingTask.task.getTaskId(), e.getMessage(), e);
                 sendTaskResult(pendingTask.task, null, e);
+                // Continue processing queue after failure
+                processTaskQueue();
             }
         }
     }
@@ -186,28 +191,29 @@ public class Worker implements MessageBus.MessageHandler {
             logger.debug("Worker {} executing task {} with partition {} ({})", 
                 workerId, task.getTaskId(), partition.index(), partition.getClass().getSimpleName());
             
-            // Execute task - this may return futures that need tick progression
-//            Object result = executeTaskWithTickProgression(typedTask, partition);
+            // Execute task - this returns a future
             CompletableFuture<?> future = task.execute(partition);
             future.whenComplete((result, throwable) -> {
+                // FIXED: Decrement task count when future actually completes
+                activeTasks--;
                 logger.info("Worker {} completed task {} with result: {}", workerId, task.getTaskId(), result);
+                
                 if (throwable != null) {
                     sendTaskResult(task, result, throwable);
-                    return;
+                } else {
+                    sendTaskResult(task, result, null);
                 }
-                sendTaskResult(task, result, null);
+                
+                // Process more tasks from queue now that this one is truly complete
+                processTaskQueue();
             });
 
-            
         } catch (Exception e) {
+            // FIXED: Only decrement on immediate synchronous failure
+            activeTasks--;
             logger.error("Worker {} failed to execute task {}: {}", workerId, task.getTaskId(), e.getMessage(), e);
             sendTaskResult(task, null, e);
-        } finally {
-            // BACK-PRESSURE: Task completed, decrement active count and process more tasks
-            activeTasks--;
-            logger.debug("Worker {} finished task {}, active tasks: {}", workerId, task.getTaskId(), activeTasks);
-            
-            // Process more tasks from queue if available
+            // Process more tasks after synchronous failure
             processTaskQueue();
         }
     }
