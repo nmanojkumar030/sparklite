@@ -2,7 +2,7 @@ package minispark.storage.parquet;
 
 import minispark.storage.Record;
 import minispark.storage.table.TableSchema;
-import minispark.storage.parquet.assignment.ParquetFileWriter;
+import minispark.storage.parquet.assignment.TestCustomerParquetFileWriter;
 import minispark.storage.parquet.assignment.SimpleParquetReader;
 import minispark.storage.parquet.assignment.ParquetMetadata;
 
@@ -53,7 +53,7 @@ public class ParquetAssignmentTest {
         reader = new SimpleParquetReader(schema);
         
         // Create test file with structured row groups
-        ParquetFileWriter.createCustomersFile(testFilePath);
+        TestCustomerParquetFileWriter.createCustomersFile(testFilePath);
     }
     
     @Test

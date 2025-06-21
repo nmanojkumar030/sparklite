@@ -18,7 +18,7 @@ By completing this assignment, students will understand:
 
 ### Complete Implementations (Provided)
 
-- **`ParquetFileWriter.java`** - Creates sample customer data with educational row group structure
+- **`TestCustomerParquetFileWriter.java`** - Creates sample customer data with educational row group structure
 - **`ParquetMetadata.java`** - Wrapper for accessing Parquet metadata with helper methods
 - **Test Classes** - Comprehensive tests demonstrating performance comparisons
 
@@ -200,7 +200,7 @@ This assignment **reuses existing codebase** components:
 
 # Create sample file manually
 ./gradlew compileJava
-# Then run ParquetFileWriter.createCustomersFile("sample.parquet")
+# Then run TestCustomerParquetFileWriter.createCustomersFile("sample.parquet")
 ```
 
 ## 📚 Additional Resources

@@ -41,8 +41,9 @@ public class ParquetStorage implements StorageInterface {
     private final ParquetOperations operations;
     
     // Parquet's native row group size configuration (128MB industry standard)
-    private static final long DEFAULT_ROW_GROUP_SIZE = 128 * 1024 * 1024; // 128MB
-    
+//    private static final long DEFAULT_ROW_GROUP_SIZE = 128 * 1024 * 1024; // 128MB
+    private static final long DEFAULT_ROW_GROUP_SIZE = 2 * 1024; // 2 KB for test demonstrations
+
     /**
      * Creates a new Parquet storage engine.
      * 

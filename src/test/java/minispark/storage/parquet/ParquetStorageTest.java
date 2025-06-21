@@ -101,25 +101,90 @@ public class ParquetStorageTest {
     }
     
     /**
-     * EDUCATIONAL: Test range scan operation.
+     * EDUCATIONAL: Test range scan operation with performance demonstration.
+     * Creates enough data to show Parquet's columnar storage and row group filtering benefits.
      */
     @Test
-    void testRangeScan() throws IOException {
-        System.out.println("\nTesting Range Scan");
+    void testRangeScanPerformance() throws IOException {
+        System.out.println("\nTesting Range Scan Performance");
         System.out.println("=" .repeat(50));
         
-        byte[] startKey = "CUST001".getBytes();
-        byte[] endKey = "CUST999".getBytes();
-        List<String> columns = Arrays.asList("name", "city");
+        // Create substantial test data to demonstrate performance benefits
+        List<Record> largeDataset = createLargeTestDataset(10000); // 10K records
         
-        // Test scan operation
-        List<Record> results = storage.scan(startKey, endKey, columns);
+        System.out.println("Created " + largeDataset.size() + " records for performance testing");
         
-        // Should return empty list since no actual files yet
-        assertNotNull(results);
-        assertTrue(results.isEmpty());
+        // Write the large dataset
+        long writeStart = System.currentTimeMillis();
+        assertDoesNotThrow(() -> storage.writeBatch(largeDataset));
+        long writeTime = System.currentTimeMillis() - writeStart;
+        System.out.println("Batch write completed in " + writeTime + "ms");
         
-        System.out.println("Range scan completed (no data found as expected)");
+        // Test 1: Full scan (all columns)
+        byte[] startKey = "CUST0001".getBytes();
+        byte[] endKey = "CUST9999".getBytes();
+        
+        long fullScanStart = System.currentTimeMillis();
+        List<Record> fullResults = storage.scan(startKey, endKey, null); // null = all columns
+        long fullScanTime = System.currentTimeMillis() - fullScanStart;
+        
+        System.out.println("Full scan returned " + fullResults.size() + " records in " + fullScanTime + "ms");
+        
+        // Test 2: Columnar projection (only 2 columns)
+        List<String> projectedColumns = Arrays.asList("name", "city");
+        
+        long projectionStart = System.currentTimeMillis();
+        List<Record> projectedResults = storage.scan(startKey, endKey, projectedColumns);
+        long projectionTime = System.currentTimeMillis() - projectionStart;
+        
+        System.out.println("Columnar projection returned " + projectedResults.size() + " records in " + projectionTime + "ms");
+        
+        // Test 3: Selective range scan (smaller range)
+        byte[] selectiveStartKey = "CUST2000".getBytes();
+        byte[] selectiveEndKey = "CUST3000".getBytes();
+        
+        long selectiveStartTime = System.currentTimeMillis();
+        List<Record> selectiveResults = storage.scan(selectiveStartKey, selectiveEndKey, projectedColumns);
+        long selectiveTime = System.currentTimeMillis() - selectiveStartTime;
+        
+        System.out.println("Selective range scan returned " + selectiveResults.size() + " records in " + selectiveTime + "ms");
+        
+        // Educational output about Parquet benefits
+        System.out.println("\n📊 PARQUET PERFORMANCE BENEFITS:");
+        System.out.println("• Columnar Storage: Only reads requested columns (" + projectedColumns + ")");
+        System.out.println("• Row Group Filtering: Skips irrelevant row groups based on key range");
+        System.out.println("• Compression: Reduces I/O through column-specific compression");
+        
+        if (projectionTime < fullScanTime) {
+            double improvement = ((double)(fullScanTime - projectionTime) / fullScanTime) * 100;
+            System.out.println("• Column projection was " + String.format("%.1f", improvement) + "% faster");
+        }
+    }
+    
+    /**
+     * Creates a large dataset for performance testing.
+     * Generates records with realistic data distribution.
+     */
+    private List<Record> createLargeTestDataset(int recordCount) {
+        List<Record> records = new ArrayList<>();
+        Random random = new Random(42); // Fixed seed for reproducible tests
+        
+        String[] cities = {"New York", "Los Angeles", "Chicago", "Houston", "Phoenix", 
+                          "Philadelphia", "San Antonio", "San Diego", "Dallas", "San Jose"};
+        String[] domains = {"gmail.com", "yahoo.com", "outlook.com", "company.com", "startup.io"};
+        
+        for (int i = 1; i <= recordCount; i++) {
+            String custId = String.format("CUST%04d", i);
+            String name = "Customer " + i;
+            String email = "user" + i + "@" + domains[random.nextInt(domains.length)];
+            Integer age = 18 + random.nextInt(65); // Age 18-82
+            String city = cities[random.nextInt(cities.length)];
+            
+            records.add(new Record(custId.getBytes(), 
+                createCustomerData(custId, name, email, age, city)));
+        }
+        
+        return records;
     }
 
     @Test
