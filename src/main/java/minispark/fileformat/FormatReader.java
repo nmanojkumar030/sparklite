@@ -3,6 +3,7 @@ package minispark.fileformat;
 import minispark.core.Partition;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Generic interface for reading different file formats.
@@ -20,9 +21,9 @@ public interface FormatReader<T> {
      *
      * @param filePath Path to the file to analyze
      * @param targetPartitions Desired number of partitions
-     * @return Array of partitions for this file
+     * @return CompletableFuture containing array of partitions for this file
      */
-    FilePartition[] createPartitions(String filePath, int targetPartitions);
+    CompletableFuture<FilePartition[]> createPartitions(String filePath, int targetPartitions);
     
     /**
      * Read data from a specific partition of the file.

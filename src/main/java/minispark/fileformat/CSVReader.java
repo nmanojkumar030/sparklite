@@ -7,6 +7,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 
 /**
@@ -41,65 +42,67 @@ public class CSVReader implements FormatReader<String[]> {
     }
     
     @Override
-    public FilePartition[] createPartitions(String filePath, int targetPartitions) {
-        try {
-            logger.info("Analyzing CSV file: {} with target partitions: {}", filePath, targetPartitions);
-            
-            // Count total lines in the file
-            long totalLines;
-            try (Stream<String> lines = Files.lines(Paths.get(filePath))) {
-                totalLines = lines.count();
-            }
-            
-            if (totalLines == 0) {
-                return new FilePartition[0];
-            }
-            
-            // Adjust for header
-            long dataLines = hasHeader ? totalLines - 1 : totalLines;
-            long headerLines = hasHeader ? 1 : 0;
-            
-            // Calculate lines per partition
-            long linesPerPartition = Math.max(1, dataLines / targetPartitions);
-            int actualPartitions = (int) Math.ceil((double) dataLines / linesPerPartition);
-            
-            logger.info("CSV analysis: {} total lines, {} data lines, {} lines per partition, {} actual partitions", 
-                totalLines, dataLines, linesPerPartition, actualPartitions);
-            
-            FilePartition[] partitions = new FilePartition[actualPartitions];
-            
-            for (int i = 0; i < actualPartitions; i++) {
-                long startLine = headerLines + (i * linesPerPartition);
-                long endLine = Math.min(startLine + linesPerPartition - 1, totalLines - 1);
-                long partitionLines = endLine - startLine + 1;
+    public CompletableFuture<FilePartition[]> createPartitions(String filePath, int targetPartitions) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                logger.info("Analyzing CSV file: {} with target partitions: {}", filePath, targetPartitions);
                 
-                // CSV-specific metadata
-                Map<String, Object> metadata = new HashMap<>();
-                metadata.put("startLine", startLine);
-                metadata.put("endLine", endLine);
-                metadata.put("lineCount", partitionLines);
-                metadata.put("delimiter", delimiter);
-                metadata.put("hasHeader", hasHeader);
-                metadata.put("encoding", encoding);
-                metadata.put("headerLine", hasHeader ? 0L : null);
+                // Count total lines in the file
+                long totalLines;
+                try (Stream<String> lines = Files.lines(Paths.get(filePath))) {
+                    totalLines = lines.count();
+                }
                 
-                partitions[i] = new FilePartition(
-                    i,
-                    filePath,
-                    startLine, // Use line number as offset
-                    partitionLines, // Use line count as length
-                    metadata
-                );
+                if (totalLines == 0) {
+                    return new FilePartition[0];
+                }
                 
-                logger.debug("CSV Partition {}: lines {}-{} ({} lines)", 
-                    i, startLine, endLine, partitionLines);
+                // Adjust for header
+                long dataLines = hasHeader ? totalLines - 1 : totalLines;
+                long headerLines = hasHeader ? 1 : 0;
+                
+                // Calculate lines per partition
+                long linesPerPartition = Math.max(1, dataLines / targetPartitions);
+                int actualPartitions = (int) Math.ceil((double) dataLines / linesPerPartition);
+                
+                logger.info("CSV analysis: {} total lines, {} data lines, {} lines per partition, {} actual partitions", 
+                    totalLines, dataLines, linesPerPartition, actualPartitions);
+                
+                FilePartition[] partitions = new FilePartition[actualPartitions];
+                
+                for (int i = 0; i < actualPartitions; i++) {
+                    long startLine = headerLines + (i * linesPerPartition);
+                    long endLine = Math.min(startLine + linesPerPartition - 1, totalLines - 1);
+                    long partitionLines = endLine - startLine + 1;
+                    
+                    // CSV-specific metadata
+                    Map<String, Object> metadata = new HashMap<>();
+                    metadata.put("startLine", startLine);
+                    metadata.put("endLine", endLine);
+                    metadata.put("lineCount", partitionLines);
+                    metadata.put("delimiter", delimiter);
+                    metadata.put("hasHeader", hasHeader);
+                    metadata.put("encoding", encoding);
+                    metadata.put("headerLine", hasHeader ? 0L : null);
+                    
+                    partitions[i] = new FilePartition(
+                        i,
+                        filePath,
+                        startLine, // Use line number as offset
+                        partitionLines, // Use line count as length
+                        metadata
+                    );
+                    
+                    logger.debug("CSV Partition {}: lines {}-{} ({} lines)", 
+                        i, startLine, endLine, partitionLines);
+                }
+                
+                return partitions;
+                
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to analyze CSV file: " + filePath, e);
             }
-            
-            return partitions;
-            
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to analyze CSV file: " + filePath, e);
-        }
+        });
     }
     
     @Override

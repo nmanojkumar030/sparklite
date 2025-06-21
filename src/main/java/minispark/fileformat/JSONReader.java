@@ -9,6 +9,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * JSON format reader that creates partitions based on record boundaries.
@@ -47,20 +48,22 @@ public class JSONReader implements FormatReader<JsonNode> {
     }
     
     @Override
-    public FilePartition[] createPartitions(String filePath, int targetPartitions) {
-        try {
-            logger.info("Analyzing JSON file: {} with format: {} and target partitions: {}", 
-                filePath, format, targetPartitions);
-            
-            if (format == JsonFormat.JSON_LINES) {
-                return createJsonLinesPartitions(filePath, targetPartitions);
-            } else {
-                return createJsonArrayPartitions(filePath, targetPartitions);
+    public CompletableFuture<FilePartition[]> createPartitions(String filePath, int targetPartitions) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                logger.info("Analyzing JSON file: {} with format: {} and target partitions: {}", 
+                    filePath, format, targetPartitions);
+                
+                if (format == JsonFormat.JSON_LINES) {
+                    return createJsonLinesPartitions(filePath, targetPartitions);
+                } else {
+                    return createJsonArrayPartitions(filePath, targetPartitions);
+                }
+                
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to analyze JSON file: " + filePath, e);
             }
-            
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to analyze JSON file: " + filePath, e);
-        }
+        });
     }
     
     private FilePartition[] createJsonLinesPartitions(String filePath, int targetPartitions) throws IOException {

@@ -20,6 +20,8 @@ import org.apache.parquet.io.MessageColumnIO;
 import org.apache.parquet.io.RecordReader;
 import org.apache.parquet.example.data.simple.convert.GroupRecordConverter;
 
+import java.util.concurrent.CompletableFuture;
+
 /**
  * Parquet format reader that creates partitions based on row groups.
  * This implementation is for local filesystem access only.
@@ -44,77 +46,79 @@ public class ParquetReader implements FormatReader<Group> {
     }
     
     @Override
-    public FilePartition[] createPartitions(String filePath, int targetPartitions) {
-        try {
-            // Use traditional Hadoop filesystem
-            logger.info("Using Hadoop filesystem for: {}", filePath);
-            Path path = new Path(filePath);
-            ParquetMetadata parquetMetadata = ParquetFileReader.readFooter(hadoopConf, path);
-            
-            List<BlockMetaData> rowGroups = parquetMetadata.getBlocks();
-            logger.info("Parquet file {} has {} row groups, target partitions: {}", 
-                filePath, rowGroups.size(), targetPartitions);
-            
-            if (rowGroups.isEmpty()) {
-                return new FilePartition[0];
-            }
-            
-            // Strategy: Distribute row groups across partitions
-            // If we have more row groups than target partitions, group multiple row groups per partition
-            // If we have fewer row groups than target partitions, create one partition per row group
-            
-            int actualPartitions = Math.min(targetPartitions, rowGroups.size());
-            FilePartition[] partitions = new FilePartition[actualPartitions];
-            
-            // Calculate row groups per partition
-            int rowGroupsPerPartition = rowGroups.size() / actualPartitions;
-            int remainingRowGroups = rowGroups.size() % actualPartitions;
-            
-            int currentRowGroupIndex = 0;
-            for (int partitionIndex = 0; partitionIndex < actualPartitions; partitionIndex++) {
-                // Some partitions get an extra row group if there's a remainder
-                int rowGroupsInThisPartition = rowGroupsPerPartition + 
-                    (partitionIndex < remainingRowGroups ? 1 : 0);
+    public CompletableFuture<FilePartition[]> createPartitions(String filePath, int targetPartitions) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                // Use traditional Hadoop filesystem
+                logger.info("Using Hadoop filesystem for: {}", filePath);
+                Path path = new Path(filePath);
+                ParquetMetadata parquetMetadata = ParquetFileReader.readFooter(hadoopConf, path);
                 
-                List<Integer> rowGroupIndices = new ArrayList<>();
-                long totalRows = 0;
-                long startOffset = Long.MAX_VALUE;
-                long endOffset = 0;
+                List<BlockMetaData> rowGroups = parquetMetadata.getBlocks();
+                logger.info("Parquet file {} has {} row groups, target partitions: {}", 
+                    filePath, rowGroups.size(), targetPartitions);
                 
-                for (int i = 0; i < rowGroupsInThisPartition; i++) {
-                    BlockMetaData rowGroup = rowGroups.get(currentRowGroupIndex);
-                    rowGroupIndices.add(currentRowGroupIndex);
-                    totalRows += rowGroup.getRowCount();
-                    
-                    // Track the physical byte range for this partition
-                    long rowGroupStart = rowGroup.getStartingPos();
-                    long rowGroupEnd = rowGroupStart + rowGroup.getTotalByteSize();
-                    startOffset = Math.min(startOffset, rowGroupStart);
-                    endOffset = Math.max(endOffset, rowGroupEnd);
-                    
-                    currentRowGroupIndex++;
+                if (rowGroups.isEmpty()) {
+                    return new FilePartition[0];
                 }
                 
-                // Create partition metadata
-                Map<String, Object> partitionMetadata = new HashMap<>();
-                partitionMetadata.put("rowGroupIndices", rowGroupIndices);
-                partitionMetadata.put("totalRows", totalRows);
-                partitionMetadata.put("schema", parquetMetadata.getFileMetaData().getSchema());
+                // Strategy: Distribute row groups across partitions
+                // If we have more row groups than target partitions, group multiple row groups per partition
+                // If we have fewer row groups than target partitions, create one partition per row group
                 
-                long length = endOffset - startOffset;
-                partitions[partitionIndex] = new FilePartition(
-                    partitionIndex, filePath, startOffset, length, partitionMetadata
-                );
+                int actualPartitions = Math.min(targetPartitions, rowGroups.size());
+                FilePartition[] partitions = new FilePartition[actualPartitions];
                 
-                logger.debug("Created partition {} with {} row groups, {} rows, offset={}-{}", 
-                    partitionIndex, rowGroupsInThisPartition, totalRows, startOffset, endOffset);
+                // Calculate row groups per partition
+                int rowGroupsPerPartition = rowGroups.size() / actualPartitions;
+                int remainingRowGroups = rowGroups.size() % actualPartitions;
+                
+                int currentRowGroupIndex = 0;
+                for (int partitionIndex = 0; partitionIndex < actualPartitions; partitionIndex++) {
+                    // Some partitions get an extra row group if there's a remainder
+                    int rowGroupsInThisPartition = rowGroupsPerPartition + 
+                        (partitionIndex < remainingRowGroups ? 1 : 0);
+                    
+                    List<Integer> rowGroupIndices = new ArrayList<>();
+                    long totalRows = 0;
+                    long startOffset = Long.MAX_VALUE;
+                    long endOffset = 0;
+                    
+                    for (int i = 0; i < rowGroupsInThisPartition; i++) {
+                        BlockMetaData rowGroup = rowGroups.get(currentRowGroupIndex);
+                        rowGroupIndices.add(currentRowGroupIndex);
+                        totalRows += rowGroup.getRowCount();
+                        
+                        // Track the physical byte range for this partition
+                        long rowGroupStart = rowGroup.getStartingPos();
+                        long rowGroupEnd = rowGroupStart + rowGroup.getTotalByteSize();
+                        startOffset = Math.min(startOffset, rowGroupStart);
+                        endOffset = Math.max(endOffset, rowGroupEnd);
+                        
+                        currentRowGroupIndex++;
+                    }
+                    
+                    // Create partition metadata
+                    Map<String, Object> partitionMetadata = new HashMap<>();
+                    partitionMetadata.put("rowGroupIndices", rowGroupIndices);
+                    partitionMetadata.put("totalRows", totalRows);
+                    partitionMetadata.put("schema", parquetMetadata.getFileMetaData().getSchema());
+                    
+                    long length = endOffset - startOffset;
+                    partitions[partitionIndex] = new FilePartition(
+                        partitionIndex, filePath, startOffset, length, partitionMetadata
+                    );
+                    
+                    logger.debug("Created partition {} with {} row groups, {} rows, offset={}-{}", 
+                        partitionIndex, rowGroupsInThisPartition, totalRows, startOffset, endOffset);
+                }
+                
+                return partitions;
+                
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to read Parquet metadata from " + filePath, e);
             }
-            
-            return partitions;
-            
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to read Parquet metadata from " + filePath, e);
-        }
+        });
     }
     
     @Override

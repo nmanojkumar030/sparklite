@@ -141,17 +141,10 @@ class ObjectFileParquetReaderTest {
             // Act: Create partitions (this triggers footer reading with range requests)
             System.out.println("📋 Step 2: Creating partitions (reading footer)...");
             
-            // DETERMINISM FIX: Use supplyAsync but ensure tick progression while it runs
-            // createPartitions() makes async calls to object store, so it needs to run 
-            // in a context where ticks are being driven
-            CompletableFuture<FilePartition[]> partitionsFuture = CompletableFuture.supplyAsync(() -> {
-                try {
-                    return objectFileReader.createPartitions(objectStoreKey, DEFAULT_TARGET_PARTITIONS);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            });
-            
+                        // DETERMINISM FIX: createPartitions() now returns CompletableFuture and makes async calls
+            // to object store, so it needs to run in a context where ticks are being driven
+            CompletableFuture<FilePartition[]> partitionsFuture = objectFileReader.createPartitions(objectStoreKey, DEFAULT_TARGET_PARTITIONS);
+
             // Drive ticks until the future completes - this allows async operations inside
             // createPartitions() to make progress
             SimulationRunner.runUntil(messageBus, () -> partitionsFuture.isDone(), java.time.Duration.ofSeconds(10));

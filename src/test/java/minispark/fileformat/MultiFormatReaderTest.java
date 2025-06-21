@@ -29,7 +29,7 @@ class MultiFormatReaderTest {
             "4,Alice Brown,alice@example.com,28,Boston");
         
         CSVReader csvReader1 = new CSVReader();
-        FilePartition[] partitions1 = csvReader1.createPartitions(csvFile1, 2);
+        FilePartition[] partitions1 = csvReader1.createPartitions(csvFile1, 2).join();
         
         System.out.println("CSV Test 1 - Basic:");
         System.out.printf("  Created %d partitions for %d records%n", partitions1.length, 4);
@@ -55,7 +55,7 @@ class MultiFormatReaderTest {
         System.out.println("\nCSV Test 2 - With Headers:");
         System.out.printf("  Headers: [%s]%n", String.join(", ", headers));
         
-        FilePartition[] partitions2 = csvReader2.createPartitions(csvFile2, 1);
+        FilePartition[] partitions2 = csvReader2.createPartitions(csvFile2, 1).join();
         Iterator<String[]> iter2 = csvReader2.readPartition(csvFile2, partitions2[0]);
         while (iter2.hasNext()) {
             String[] row = iter2.next();
@@ -79,7 +79,7 @@ class MultiFormatReaderTest {
             "{\"id\": 3, \"name\": \"Bob Johnson\", \"age\": 35, \"city\": \"Chicago\"}");
         
         JSONReader jsonReader1 = new JSONReader(); // Default: JSON Lines
-        FilePartition[] partitions1 = jsonReader1.createPartitions(jsonFile1, 2);
+        FilePartition[] partitions1 = jsonReader1.createPartitions(jsonFile1, 2).join();
         
         System.out.println("JSON Test 1 - JSON Lines:");
         System.out.printf("  Created %d partitions for 3 records%n", partitions1.length);
@@ -104,7 +104,7 @@ class MultiFormatReaderTest {
             "]");
         
         JSONReader jsonReader2 = new JSONReader(JSONReader.JsonFormat.JSON_ARRAY, "UTF-8");
-        FilePartition[] partitions2 = jsonReader2.createPartitions(jsonFile2, 1);
+        FilePartition[] partitions2 = jsonReader2.createPartitions(jsonFile2, 1).join();
         
         System.out.println("\nJSON Test 2 - JSON Array:");
         System.out.printf("  Created %d partitions%n", partitions2.length);
@@ -140,7 +140,7 @@ class MultiFormatReaderTest {
         CSVReader csvReader = new CSVReader(",", true, "UTF-8");
         
         // Simulate FileFormatRDD usage (without full MiniSparkContext)
-        FilePartition[] csvPartitions = csvReader.createPartitions(csvFile, 2);
+        FilePartition[] csvPartitions = csvReader.createPartitions(csvFile, 2).join();
         System.out.printf("   CSV: %d partitions created%n", csvPartitions.length);
         
         for (FilePartition partition : csvPartitions) {
@@ -153,7 +153,7 @@ class MultiFormatReaderTest {
         System.out.println("\n2. Processing JSON with FileFormatRDD:");
         JSONReader jsonReader = new JSONReader();
         
-        FilePartition[] jsonPartitions = jsonReader.createPartitions(jsonFile, 2);
+        FilePartition[] jsonPartitions = jsonReader.createPartitions(jsonFile, 2).join();
         System.out.printf("   JSON: %d partitions created%n", jsonPartitions.length);
         
         for (FilePartition partition : jsonPartitions) {

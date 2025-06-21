@@ -25,7 +25,7 @@ public class FileFormatRDD<T> implements MiniRDD<T> {
     private final MiniSparkContext sc;
     private final String filePath;
     private final FormatReader<T> formatReader;
-    private final FilePartition[] partitions;
+    private final CompletableFuture<FilePartition[]> partitionsFuture;
     
     /**
      * Create a new FileFormatRDD.
@@ -39,10 +39,13 @@ public class FileFormatRDD<T> implements MiniRDD<T> {
         this.sc = sc;
         this.filePath = filePath;
         this.formatReader = formatReader;
-        this.partitions = formatReader.createPartitions(filePath, targetPartitions);
+        this.partitionsFuture = formatReader.createPartitions(filePath, targetPartitions);
         
-        logger.info("Created FileFormatRDD for {} with {} partitions using {} reader", 
-            filePath, partitions.length, formatReader.getFormatName());
+        // Log when partitions are ready (async)
+        this.partitionsFuture.thenAccept(partitions -> 
+            logger.info("Created FileFormatRDD for {} with {} partitions using {} reader", 
+                filePath, partitions.length, formatReader.getFormatName())
+        );
     }
     
     /**
@@ -54,7 +57,13 @@ public class FileFormatRDD<T> implements MiniRDD<T> {
     
     @Override
     public Partition[] getPartitions() {
-        return partitions;
+        // For now, we need to block here since the RDD interface doesn't support async getPartitions
+        // TODO: Consider making the entire RDD interface async in the future
+        try {
+            return partitionsFuture.join();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get partitions for " + filePath, e);
+        }
     }
     
     @Override

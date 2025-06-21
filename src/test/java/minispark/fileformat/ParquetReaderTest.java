@@ -76,7 +76,7 @@ class ParquetReaderTest {
             testCustomers, SMALL_ROW_GROUP_SIZE);
         
         // Act: Create partitions for distributed processing
-        FilePartition[] partitions = parquetReader.createPartitions(parquetFile, DEFAULT_TARGET_PARTITIONS);
+        FilePartition[] partitions = parquetReader.createPartitions(parquetFile, DEFAULT_TARGET_PARTITIONS).join();
         
         // Assert: Verify partition structure and metadata
         assertPartitionBasicProperties(partitions, parquetFile);
@@ -103,7 +103,7 @@ class ParquetReaderTest {
         // Arrange: Create test file and partitions
         String parquetFile = createTestParquetFile(tempDir, "read_test_customers.parquet", 
             testCustomers, MEDIUM_ROW_GROUP_SIZE);
-        FilePartition[] partitions = parquetReader.createPartitions(parquetFile, 2);
+        FilePartition[] partitions = parquetReader.createPartitions(parquetFile, 2).join();
         
         // Act: Read data from all partitions
         List<TestCustomer> allReadCustomers = readAllPartitions(parquetFile, partitions);
