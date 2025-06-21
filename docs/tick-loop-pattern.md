@@ -194,7 +194,7 @@ For tests that don't go through the Worker execution path, use `TestUtils.runUnt
 ```java
 // ✅ Correct - Use TestUtils for test-specific tick progression
 CompletableFuture<Void> future = client.putObject(key, data);
-minispark.util.SimulationRunner.runUntil(messageBus,
+minispark.util.EventLoopRunner.runUntil(messageBus,
     () -> future.isDone(),
     Duration.ofSeconds(5));
 
@@ -268,7 +268,7 @@ void testObjectStore() {
 @Test
 void testObjectStore() {
     CompletableFuture<Void> future = client.putObject("key", data);
-    minispark.util.SimulationRunner.runUntil(messageBus,
+    minispark.util.EventLoopRunner.runUntil(messageBus,
         () -> future.isDone(),
         Duration.ofSeconds(5));
 }

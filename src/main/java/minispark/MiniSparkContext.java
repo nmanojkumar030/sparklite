@@ -1,7 +1,7 @@
 package minispark;
 
-import minispark.core.MiniRDD;
-import minispark.core.ParallelCollectionRDD;
+import minispark.distributed.rdd.MiniRDD;
+import minispark.distributed.rdd.ParallelCollectionRDD;
 import java.util.List;
 
 public class MiniSparkContext {
