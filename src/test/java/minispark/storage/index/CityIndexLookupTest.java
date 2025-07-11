@@ -29,7 +29,7 @@ public class CityIndexLookupTest {
     
     private Path testDirectory;
     private Table customerTable;
-    private CityIndex cityLookupService;
+    private CityIndex cityIndex;
     
     @BeforeEach
     public void setUp() throws IOException {
@@ -42,13 +42,13 @@ public class CityIndexLookupTest {
         
         // Create city lookup service using generic architecture
         Path indexDirectory = testDirectory.resolve("indexes");
-        cityLookupService = new CityIndex(customerTable, indexDirectory);
+        cityIndex = new CityIndex(customerTable, indexDirectory);
     }
     
     @AfterEach
     public void tearDown() throws IOException {
-        if (cityLookupService != null) {
-            cityLookupService.close();
+        if (cityIndex != null) {
+            cityIndex.close();
         }
         if (customerTable != null) {
             customerTable.close();
@@ -71,7 +71,7 @@ public class CityIndexLookupTest {
         
         // Phase 2: Build city index using generic architecture
         System.out.println("\n2. Building city index...");
-        boolean built = cityLookupService.buildCityIndex();
+        boolean built = cityIndex.buildCityIndex();
         assertTrue(built, "City index should be built successfully");
         
         // Phase 3: Demonstrate city-based lookups
@@ -125,7 +125,7 @@ public class CityIndexLookupTest {
             customerTable.insert(record);
             
             // Manually collect city mapping (domain-specific operation)
-            cityLookupService.addCityMapping(city, customer[0]);
+            cityIndex.addCityMapping(city, customer[0]);
         }
         
         System.out.println("   Inserted " + customers.length + " customers");
@@ -138,7 +138,7 @@ public class CityIndexLookupTest {
         String[] testCities = {"New York", "Los Angeles", "Chicago"};
         
         for (String city : testCities) {
-            List<String> customerIds = cityLookupService.getCustomerIdsByCity(city);
+            List<String> customerIds = cityIndex.getCustomerIdsByCity(city);
             assertFalse(customerIds.isEmpty(), "Should find customers in " + city);
             
             System.out.println("   " + city + ": " + customerIds.size() + " customers");
@@ -155,7 +155,7 @@ public class CityIndexLookupTest {
      * Gets all customer emails in a specific city (main assignment requirement).
      */
     private List<String> getCustomerEmailsByCity(String city) throws IOException {
-        List<String> customerIds = cityLookupService.getCustomerIdsByCity(city);
+        List<String> customerIds = cityIndex.getCustomerIdsByCity(city);
         List<String> emails = new ArrayList<>();
         
         for (String customerId : customerIds) {
@@ -188,7 +188,7 @@ public class CityIndexLookupTest {
         assertTrue(true, "IndexManager class should be generic"); // IndexManager works with any indexes
         
         // Verify that CityLookupService is domain-specific
-        assertNotNull(cityLookupService, "CityLookupService should provide domain-specific functionality");
+        assertNotNull(cityIndex, "CityLookupService should provide domain-specific functionality");
         
         System.out.println("   ✅ Architecture separation verified:");
         System.out.println("     - BTree: Generic (no domain knowledge)");
