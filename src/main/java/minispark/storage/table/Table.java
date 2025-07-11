@@ -39,6 +39,7 @@ public class Table {
      * @throws IOException If an I/O error occurs
      * @throws IllegalArgumentException If the record doesn't match the schema
      */
+    //insert into (table) values (....)
     public void insert(TableRecord record) throws IOException {
         System.out.println("📝 Table.insert() - Inserting record with key: " + record.getPrimaryKey());
         
